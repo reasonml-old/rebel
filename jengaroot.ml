@@ -38,47 +38,6 @@ let tap n a = if n = 0 then (print_endline a; a) else a
 let _ = tap
 let tapl n a = if n = 0 then (List.iter ~f:print_endline a; a) else a
 let _ = tapl
-let ocamldep ~dir  (sourcePaths : Path.t list) =
-  (Dep.action_stdout
-     (Dep.return
-        (bashf ~dir "ocamldep -pp refmt -modules -one-line %s"
-           (((sourcePaths |> (List.map ~f:ts)) |>
-               (List.map ~f:(fun s  -> " -impl " ^ s)))
-              |> (String.concat ~sep:" ")))))
-    *>>|
-    (fun string  ->
-       List.map (split_into_lines string)
-         ~f:(fun line  ->
-               let (target,deps) = parse_line line in
-               ((rel ~dir target),
-                 (List.map
-                    (tapl 1
-                       (deps |>
-                          (List.map
-                             ~f:(fun a  ->
-                                   "_build/" ^
-                                     (libName ^
-                                        ("/" ^
-                                           ((String.uncapitalize a) ^ ".cmi")))))))
-                    ~f:(rel ~dir)))))
-let ocamldepSort ~dir  (sourcePaths : Path.t list) =
-  (Dep.action_stdout
-     (Dep.return
-        (bashf ~dir "ocamldep -pp refmt -sort -one-line %s"
-           (tap 1
-              (((sourcePaths |> (List.map ~f:ts)) |>
-                  (List.map ~f:(fun s  -> " -impl " ^ s)))
-                 |> (String.concat ~sep:" "))))))
-    *>>|
-    (fun string  ->
-       ((String.strip string) |> (tap 3)) |> (String.split ~on:' '))
-let _ = ocamldep
-let _ = ocamldepSort
-let findInOcamldep al item =
-  match List.Assoc.find al item with
-  | None  -> raise Not_found
-  | ((Some (xs))) -> Dep.all_unit (List.map xs ~f:Dep.path)
-let _ = findInOcamldep
 let sortPathsTopologically ~dir  ~paths  =
   (Dep.action_stdout
      (Dep.return
@@ -149,7 +108,8 @@ let scheme ~dir  =
                                 Rule.create
                                   ~targets:[rel ~dir:Path.the_root cmi;
                                            rel ~dir:Path.the_root cmo]
-                                  ((Dep.all_unit ([Dep.path pa] @ moduleDeps))
+                                  ((Dep.all_unit ((Dep.path pa) ::
+                                      moduleDeps))
                                      *>>|
                                      (fun ()  ->
                                         bashf ~dir:Path.the_root

@@ -80,66 +80,6 @@ let tapl n a =>
 
 tapl;
 
-let ocamldep dir::dir (sourcePaths: list Path.t) =>
-  Dep.action_stdout (
-    Dep.return (
-      bashf
-        dir::dir
-        "ocamldep -pp refmt -modules -one-line %s"
-        (sourcePaths |> List.map f::ts |> List.map f::(fun s => " -impl " ^ s) |> String.concat sep::" ")
-    )
-  ) *>>| (
-  fun string =>
-    List.map
-      (split_into_lines string)
-      f::(
-        fun line => {
-          let (target, deps) = parse_line line;
-          (
-            rel dir::dir target,
-            List.map
-              (
-                tapl
-                  1
-                  (deps |> List.map f::(fun a => "_build/" ^ libName ^ "/" ^ String.uncapitalize a ^ ".cmi"))
-              )
-              f::(rel dir::dir)
-          )
-        }
-      )
-);
-
-let ocamldepSort dir::dir (sourcePaths: list Path.t) =>
-  Dep.action_stdout (
-    Dep.return (
-      bashf
-        dir::dir
-        "ocamldep -pp refmt -sort -one-line %s"
-        (
-          tap
-            1
-            (sourcePaths |> List.map f::ts |> List.map f::(fun s => " -impl " ^ s) |> String.concat sep::" ")
-        )
-    )
-  ) *>>| (
-  fun string => String.strip string |> tap 3 |> String.split on::' '
-);
-
-ocamldep;
-
-ocamldepSort;
-
-let findInOcamldep al item =>
-  switch (List.Assoc.find al item) {
-  | None => raise Not_found
-  | Some xs =>
-      /* ignore @@ tapl (ts item == "src/main.re" ? 0 : 1) (List.map xs f::ts);
-         print_endline "---------"; */
-      Dep.all_unit (List.map xs f::Dep.path)
-  };
-
-findInOcamldep;
-
 let sortPathsTopologically dir::dir paths::paths =>
   Dep.action_stdout (
     Dep.return {
@@ -208,7 +148,7 @@ let scheme dir::dir => {
                     Rule.create
                       targets::[rel dir::Path.the_root cmi, rel dir::Path.the_root cmo]
                       (
-                        Dep.all_unit ([Dep.path pa] @ moduleDeps) *>>| (
+                        Dep.all_unit [Dep.path pa, ...moduleDeps] *>>| (
                           fun () =>
                             bashf
                               dir::Path.the_root
