@@ -193,16 +193,17 @@ let scheme dir::dir => {
                 f::(
                   fun pa => {
                     let name = ts pa;
-                    let pathWithoutExt = String.chop_suffix_exn name suffix::".re";
-                    let cmi = pathWithoutExt ^ ".cmi";
-                    let cmo = pathWithoutExt ^ ".cmo";
+                    let outPathWithoutExt =
+                      String.chop_suffix_exn (Path.basename pa) suffix::".re" |> rel dir::buildDir |> ts;
+                    let cmi = outPathWithoutExt ^ ".cmi";
+                    let cmo = outPathWithoutExt ^ ".cmo";
                     let moduleDeps =
                       switch (List.Assoc.find assocList pa) {
                       | None => failwith ("lookup: " ^ name)
                       | Some modules =>
                           List.map
                             (modules |> tapl 1)
-                            f::(fun m => Dep.path (rel dir::srcDir (String.uncapitalize m ^ ".cmi")))
+                            f::(fun m => Dep.path (rel dir::buildDir (String.uncapitalize m ^ ".cmi")))
                       };
                     Rule.create
                       targets::[rel dir::Path.the_root cmi, rel dir::Path.the_root cmo]
@@ -212,8 +213,8 @@ let scheme dir::dir => {
                             bashf
                               dir::Path.the_root
                               "ocamlc -pp refmt -c -I %s -o %s -impl %s"
-                              (ts srcDir)
-                              pathWithoutExt
+                              (ts buildDir)
+                              outPathWithoutExt
                               name
                         )
                       )
@@ -228,8 +229,14 @@ let scheme dir::dir => {
         fun rawPaths => sortPathsTopologically dir::Path.the_root paths::rawPaths *>>| (
           fun paths => {
             let depsString =
-              List.map paths f::(fun p => (ts p |> String.chop_suffix_exn suffix::".re") ^ ".cmo");
-            let out = rel dir::srcDir "entry.out";
+              List.map
+                paths
+                f::(
+                  fun p => (
+                    Path.basename p |> String.chop_suffix_exn suffix::".re" |> rel dir::buildDir |> ts
+                  ) ^ ".cmo"
+                );
+            let out = rel dir::buildDir "entry.out";
             [
               Rule.create
                 targets::[out]
@@ -244,7 +251,7 @@ let scheme dir::dir => {
         )
       )
     ),
-    Scheme.rules [Rule.default dir::Path.the_root [Dep.path (rel dir::srcDir "entry.out")]]
+    Scheme.rules [Rule.default dir::Path.the_root [Dep.path (rel dir::buildDir "entry.out")]]
   ]
 };
 

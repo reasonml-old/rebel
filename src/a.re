@@ -1,4 +1,4 @@
 let x = B.x;
 /* let x = 100; */
 
-print_endline "fri";
+print_endline "friday";

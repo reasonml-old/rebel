@@ -129,10 +129,13 @@ let scheme ~dir  =
                         List.map paths
                           ~f:(fun pa  ->
                                 let name = ts pa in
-                                let pathWithoutExt =
-                                  String.chop_suffix_exn name ~suffix:".re" in
-                                let cmi = pathWithoutExt ^ ".cmi" in
-                                let cmo = pathWithoutExt ^ ".cmo" in
+                                let outPathWithoutExt =
+                                  ((String.chop_suffix_exn (Path.basename pa)
+                                      ~suffix:".re")
+                                     |> (rel ~dir:buildDir))
+                                    |> ts in
+                                let cmi = outPathWithoutExt ^ ".cmi" in
+                                let cmo = outPathWithoutExt ^ ".cmo" in
                                 let moduleDeps =
                                   match List.Assoc.find assocList pa with
                                   | None  -> failwith ("lookup: " ^ name)
@@ -140,7 +143,7 @@ let scheme ~dir  =
                                       List.map (modules |> (tapl 1))
                                         ~f:(fun m  ->
                                               Dep.path
-                                                (rel ~dir:srcDir
+                                                (rel ~dir:buildDir
                                                    ((String.uncapitalize m) ^
                                                       ".cmi"))) in
                                 Rule.create
@@ -151,7 +154,8 @@ let scheme ~dir  =
                                      (fun ()  ->
                                         bashf ~dir:Path.the_root
                                           "ocamlc -pp refmt -c -I %s -o %s -impl %s"
-                                          (ts srcDir) pathWithoutExt name)))))));
+                                          (ts buildDir) outPathWithoutExt
+                                          name)))))));
      Scheme.rules_dep
        ((Dep.glob_listing (Glob.create ~dir:srcDir "*.re")) *>>=
           (fun rawPaths  ->
@@ -160,9 +164,12 @@ let scheme ~dir  =
                   let depsString =
                     List.map paths
                       ~f:(fun p  ->
-                            ((ts p) |> (String.chop_suffix_exn ~suffix:".re"))
+                            ((((Path.basename p) |>
+                                 (String.chop_suffix_exn ~suffix:".re"))
+                                |> (rel ~dir:buildDir))
+                               |> ts)
                               ^ ".cmo") in
-                  let out = rel ~dir:srcDir "entry.out" in
+                  let out = rel ~dir:buildDir "entry.out" in
                   [Rule.create ~targets:[out]
                      ((Dep.all_unit
                          (List.map depsString
@@ -173,6 +180,6 @@ let scheme ~dir  =
                              (ts out) (String.concat ~sep:" " depsString)))])));
      Scheme.rules
        [Rule.default ~dir:Path.the_root
-          [Dep.path (rel ~dir:srcDir "entry.out")]]])
+          [Dep.path (rel ~dir:buildDir "entry.out")]]])
 let env = Env.create scheme
 let setup () = Deferred.return env
