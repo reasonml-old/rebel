@@ -16,6 +16,10 @@ let () = ignore (List.iter [1] f::(fun _ => ()));
 
 let rel = Path.relative;
 
+let ts = Path.to_string;
+
+ts;
+
 let bash dir::dir command => Action.process dir::dir prog::"bash" args::["-c", command] ();
 
 let bashf dir::dir fmt => ksprintf (fun str => bash dir::dir str) fmt;
@@ -82,10 +86,7 @@ let ocamldep dir::dir (sourcePaths: list Path.t) =>
       bashf
         dir::dir
         "ocamldep -pp refmt -modules -one-line %s"
-        (
-          sourcePaths |>
-            List.map f::Path.to_string |> List.map f::(fun s => " -impl " ^ s) |> String.concat sep::" "
-        )
+        (sourcePaths |> List.map f::ts |> List.map f::(fun s => " -impl " ^ s) |> String.concat sep::" ")
     )
   ) *>>| (
   fun string =>
@@ -117,10 +118,7 @@ let ocamldepSort dir::dir (sourcePaths: list Path.t) =>
         (
           tap
             1
-            (
-              sourcePaths |>
-                List.map f::Path.to_string |> List.map f::(fun s => " -impl " ^ s) |> String.concat sep::" "
-            )
+            (sourcePaths |> List.map f::ts |> List.map f::(fun s => " -impl " ^ s) |> String.concat sep::" ")
         )
     )
   ) *>>| (
@@ -135,7 +133,7 @@ let findInOcamldep al item =>
   switch (List.Assoc.find al item) {
   | None => raise Not_found
   | Some xs =>
-      /* ignore @@ tapl (Path.to_string item == "src/main.re" ? 0 : 1) (List.map xs f::Path.to_string);
+      /* ignore @@ tapl (ts item == "src/main.re" ? 0 : 1) (List.map xs f::ts);
          print_endline "---------"; */
       Dep.all_unit (List.map xs f::Dep.path)
   };
@@ -145,7 +143,7 @@ findInOcamldep;
 let sortPathsTopologically dir::dir paths::paths =>
   Dep.action_stdout (
     Dep.return {
-      let pathsString = List.map paths f::(fun a => " -impl " ^ Path.to_string a) |> String.concat sep::" ";
+      let pathsString = List.map paths f::(fun a => " -impl " ^ ts a) |> String.concat sep::" ";
       bashf dir::dir "ocamldep -pp refmt -sort -one-line %s" pathsString
     }
   ) *>>| (
@@ -160,7 +158,7 @@ let getDepModules dir::dir sourcePaths::sourcePaths =>
       bashf
         dir::dir
         "ocamldep -pp refmt -modules -one-line %s"
-        (List.map sourcePaths f::(fun a => " -impl " ^ Path.to_string a) |> String.concat sep::"")
+        (List.map sourcePaths f::(fun a => " -impl " ^ ts a) |> String.concat sep::"")
     )
   ) *>>| (
   fun string =>
@@ -194,7 +192,7 @@ let scheme dir::dir => {
                 paths
                 f::(
                   fun pa => {
-                    let name = Path.to_string pa;
+                    let name = ts pa;
                     let pathWithoutExt = String.chop_suffix_exn name suffix::".re";
                     let cmi = pathWithoutExt ^ ".cmi";
                     let cmo = pathWithoutExt ^ ".cmo";
@@ -204,19 +202,17 @@ let scheme dir::dir => {
                       | Some modules =>
                           List.map
                             (modules |> tapl 1)
-                            f::(fun m => Dep.path (rel dir::srcDir (String.uncapitalize m ^ ".re")))
+                            f::(fun m => Dep.path (rel dir::srcDir (String.uncapitalize m ^ ".cmi")))
                       };
                     Rule.create
-                      targets::[
-                        rel dir::Path.the_root cmi,
-                        rel dir::Path.the_root cmo
-                      ]
+                      targets::[rel dir::Path.the_root cmi, rel dir::Path.the_root cmo]
                       (
                         Dep.all_unit ([Dep.path pa] @ moduleDeps) *>>| (
                           fun () =>
                             bashf
                               dir::Path.the_root
-                              "ocamlc -pp refmt -c -I src/ -o %s -impl %s"
+                              "ocamlc -pp refmt -c -I %s -o %s -impl %s"
+                              (ts srcDir)
                               pathWithoutExt
                               name
                         )
@@ -232,8 +228,7 @@ let scheme dir::dir => {
         fun rawPaths => sortPathsTopologically dir::Path.the_root paths::rawPaths *>>| (
           fun paths => {
             let depsString =
-              List.map
-                paths f::(fun p => (Path.to_string p |> String.chop_suffix_exn suffix::".re") ^ ".cmo");
+              List.map paths f::(fun p => (ts p |> String.chop_suffix_exn suffix::".re") ^ ".cmo");
             let out = rel dir::srcDir "entry.out";
             [
               Rule.create
@@ -241,8 +236,7 @@ let scheme dir::dir => {
                 (
                   Dep.all_unit (List.map depsString f::(fun d => Dep.path (rel dir::Path.the_root d))) *>>| (
                     fun () =>
-                      bashf
-                        dir::Path.the_root "ocamlc -o src/entry.out %s" (String.concat sep::" " depsString)
+                      bashf dir::Path.the_root "ocamlc -o %s %s" (ts out) (String.concat sep::" " depsString)
                   )
                 )
             ]

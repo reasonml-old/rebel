@@ -7,6 +7,8 @@ let _ = ( *>>= )
 let _ = ( *>>| )
 let () = ignore (List.iter [1] ~f:(fun _  -> ()))
 let rel = Path.relative
+let ts = Path.to_string
+let _ = ts
 let bash ~dir  command =
   Action.process ~dir ~prog:"bash" ~args:["-c"; command] ()
 let bashf ~dir  fmt = ksprintf (fun str  -> bash ~dir str) fmt
@@ -40,7 +42,7 @@ let ocamldep ~dir  (sourcePaths : Path.t list) =
   (Dep.action_stdout
      (Dep.return
         (bashf ~dir "ocamldep -pp refmt -modules -one-line %s"
-           (((sourcePaths |> (List.map ~f:Path.to_string)) |>
+           (((sourcePaths |> (List.map ~f:ts)) |>
                (List.map ~f:(fun s  -> " -impl " ^ s)))
               |> (String.concat ~sep:" ")))))
     *>>|
@@ -64,7 +66,7 @@ let ocamldepSort ~dir  (sourcePaths : Path.t list) =
      (Dep.return
         (bashf ~dir "ocamldep -pp refmt -sort -one-line %s"
            (tap 1
-              (((sourcePaths |> (List.map ~f:Path.to_string)) |>
+              (((sourcePaths |> (List.map ~f:ts)) |>
                   (List.map ~f:(fun s  -> " -impl " ^ s)))
                  |> (String.concat ~sep:" "))))))
     *>>|
@@ -81,7 +83,7 @@ let sortPathsTopologically ~dir  ~paths  =
   (Dep.action_stdout
      (Dep.return
         (let pathsString =
-           (List.map paths ~f:(fun a  -> " -impl " ^ (Path.to_string a))) |>
+           (List.map paths ~f:(fun a  -> " -impl " ^ (ts a))) |>
              (String.concat ~sep:" ") in
          bashf ~dir "ocamldep -pp refmt -sort -one-line %s" pathsString)))
     *>>|
@@ -93,9 +95,8 @@ let getDepModules ~dir  ~sourcePaths  =
   (Dep.action_stdout
      (Dep.return
         (bashf ~dir "ocamldep -pp refmt -modules -one-line %s"
-           ((List.map sourcePaths
-               ~f:(fun a  -> " -impl " ^ (Path.to_string a)))
-              |> (String.concat ~sep:"")))))
+           ((List.map sourcePaths ~f:(fun a  -> " -impl " ^ (ts a))) |>
+              (String.concat ~sep:"")))))
     *>>|
     (fun string  ->
        ((String.strip string) |> (String.split ~on:'\n')) |>
@@ -127,7 +128,7 @@ let scheme ~dir  =
                      (fun assocList  ->
                         List.map paths
                           ~f:(fun pa  ->
-                                let name = Path.to_string pa in
+                                let name = ts pa in
                                 let pathWithoutExt =
                                   String.chop_suffix_exn name ~suffix:".re" in
                                 let cmi = pathWithoutExt ^ ".cmi" in
@@ -141,7 +142,7 @@ let scheme ~dir  =
                                               Dep.path
                                                 (rel ~dir:srcDir
                                                    ((String.uncapitalize m) ^
-                                                      ".re"))) in
+                                                      ".cmi"))) in
                                 Rule.create
                                   ~targets:[rel ~dir:Path.the_root cmi;
                                            rel ~dir:Path.the_root cmo]
@@ -149,8 +150,8 @@ let scheme ~dir  =
                                      *>>|
                                      (fun ()  ->
                                         bashf ~dir:Path.the_root
-                                          "ocamlc -pp refmt -c -I src/ -o %s -impl %s"
-                                          pathWithoutExt name)))))));
+                                          "ocamlc -pp refmt -c -I %s -o %s -impl %s"
+                                          (ts srcDir) pathWithoutExt name)))))));
      Scheme.rules_dep
        ((Dep.glob_listing (Glob.create ~dir:srcDir "*.re")) *>>=
           (fun rawPaths  ->
@@ -159,8 +160,7 @@ let scheme ~dir  =
                   let depsString =
                     List.map paths
                       ~f:(fun p  ->
-                            ((Path.to_string p) |>
-                               (String.chop_suffix_exn ~suffix:".re"))
+                            ((ts p) |> (String.chop_suffix_exn ~suffix:".re"))
                               ^ ".cmo") in
                   let out = rel ~dir:srcDir "entry.out" in
                   [Rule.create ~targets:[out]
@@ -169,9 +169,8 @@ let scheme ~dir  =
                             ~f:(fun d  -> Dep.path (rel ~dir:Path.the_root d))))
                         *>>|
                         (fun ()  ->
-                           bashf ~dir:Path.the_root
-                             "ocamlc -o src/entry.out %s"
-                             (String.concat ~sep:" " depsString)))])));
+                           bashf ~dir:Path.the_root "ocamlc -o %s %s"
+                             (ts out) (String.concat ~sep:" " depsString)))])));
      Scheme.rules
        [Rule.default ~dir:Path.the_root
           [Dep.path (rel ~dir:srcDir "entry.out")]]])
