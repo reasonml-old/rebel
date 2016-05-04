@@ -12,7 +12,7 @@ let _ = ts
 let bash ~dir  command =
   Action.process ~dir ~prog:"bash" ~args:["-c"; command] ()
 let bashf ~dir  fmt = ksprintf (fun str  -> bash ~dir str) fmt
-let () = ignore (bashf ~dir:Path.the_root "asd")
+let () = ignore (bashf ~dir:Path.the_root "asdaaaa")
 let non_blank s = match String.strip s with | "" -> false | _ -> true
 let split_into_lines string =
   List.filter ~f:non_blank (String.split ~on:'\n' string)
@@ -88,7 +88,7 @@ let _ = getDepModules
 let scheme ~dir  =
   let srcDir = Path.root_relative "src" in
   let buildDir = Path.root_relative ("_build/" ^ libName) in
-  let moduleAliasFilePath = rel ~dir:buildDir "asda.re" in
+  let moduleAliasFilePath = rel ~dir:buildDir (libName ^ ".re") in
   ignore dir;
   ignore buildDir;
   ignore srcDir;
@@ -123,6 +123,10 @@ let scheme ~dir  =
               (fun paths  ->
                  (getDepModules ~dir:Path.the_root ~sourcePaths:paths) *>>|
                    (fun assocList  ->
+                      let paths =
+                        List.filter paths
+                          ~f:(fun p  ->
+                                not (Path.is_descendant ~dir:buildDir p)) in
                       List.map paths
                         ~f:(fun pa  ->
                               let name = ts pa in
@@ -161,7 +165,7 @@ let scheme ~dir  =
                    List.filter paths
                      ~f:(fun p  -> not (Path.is_descendant ~dir:buildDir p)) in
                  let depsString =
-                   List.map (taplp 0 paths)
+                   List.map (taplp 1 paths)
                      ~f:(fun p  ->
                            ((((Path.basename p) |>
                                 (String.chop_suffix_exn ~suffix:".re"))

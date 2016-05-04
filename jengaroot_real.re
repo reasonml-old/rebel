@@ -30,7 +30,7 @@ let scheme dir::dir => {
             Rule.simple
               targets::[out]
               deps::(List.map paths f::Dep.path)
-              action::(bashf dir::Path.the_root "echo hi > %s" (Path.to_string out))
+              action::(bashf dir::Path.the_root "echo hiasdasd > %s" (Path.to_string out))
           ]
         }
       )

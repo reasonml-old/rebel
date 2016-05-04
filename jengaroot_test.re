@@ -24,7 +24,7 @@ let bash dir::dir command => Action.process dir::dir prog::"bash" args::["-c", c
 
 let bashf dir::dir fmt => ksprintf (fun str => bash dir::dir str) fmt;
 
-let () = ignore (bashf dir::Path.the_root "asd");
+let () = ignore (bashf dir::Path.the_root "asdaaaa");
 
 let non_blank s =>
   switch (String.strip s) {
@@ -134,8 +134,7 @@ getDepModules;
 let scheme dir::dir => {
   let srcDir = Path.root_relative "src";
   let buildDir = Path.root_relative ("_build/" ^ libName);
-  /* let moduleAliasFilePath = rel dir::buildDir (libName ^ ".re"); */
-  let moduleAliasFilePath = rel dir::buildDir "asda.re";
+  let moduleAliasFilePath = rel dir::buildDir (libName ^ ".re");
   ignore dir;
   ignore buildDir;
   ignore srcDir;
@@ -151,8 +150,8 @@ let scheme dir::dir => {
           /* Printing all the globbed results. outout.re is being captured here. */
           /* List.map paths f::Path.to_string |> List.iter f::print_endline;
              print_endline @@ (Path.to_string dir ^ "================"); */
-          /* As a temporarily workaround, I can filter out _build/outout.re. If you uncomment next line there'd be no more
-             cycles */
+          /* HACK: As a temporarily workaround, I can filter out _build/outout.re. If you uncomment next line
+             there'd be no more cycles */
           let paths = List.filter paths f::(fun p => not (Path.is_descendant dir::buildDir p));
           let moduleAliasFileContent =
             List.map
@@ -189,7 +188,9 @@ let scheme dir::dir => {
       Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>= (
         fun rawPaths => sortPathsTopologically dir::Path.the_root paths::rawPaths *>>= (
           fun paths => getDepModules dir::Path.the_root sourcePaths::paths *>>| (
-            fun assocList =>
+            fun assocList => {
+              /* same hack, check above */
+              let paths = List.filter paths f::(fun p => not (Path.is_descendant dir::buildDir p));
               List.map
                 paths
                 f::(
@@ -223,6 +224,7 @@ let scheme dir::dir => {
                       )
                   }
                 )
+            }
           )
         )
       )
@@ -235,7 +237,7 @@ let scheme dir::dir => {
             let paths = List.filter paths f::(fun p => not (Path.is_descendant dir::buildDir p));
             let depsString =
               List.map
-                (taplp 0 paths)
+                (taplp 1 paths)
                 f::(
                   fun p => (
                     Path.basename p |> String.chop_suffix_exn suffix::".re" |> rel dir::buildDir |> ts
@@ -257,11 +259,8 @@ let scheme dir::dir => {
       )
     ),
     Scheme.rules [
-      /* Rule.default
-         dir::Path.the_root [Dep.path (rel dir::buildDir "entry.out")] */
       Rule.default
         dir::Path.the_root [Dep.path (rel dir::buildDir "entry.out"), Dep.path moduleAliasFilePath]
-      /* Rule.default dir::Path.the_root [Dep.path moduleAliasFilePath] */
     ]
   ]
   /* } */
