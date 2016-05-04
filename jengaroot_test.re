@@ -62,6 +62,7 @@ parse_line;
 
 let tap n a =>
   if (n == 0) {
+    print_endline "tap---------";
     print_endline a;
     a
   } else {
@@ -72,6 +73,7 @@ tap;
 
 let tapl n a =>
   if (n == 0) {
+    print_endline "tapl---------";
     List.iter f::print_endline a;
     a
   } else {
@@ -80,7 +82,19 @@ let tapl n a =>
 
 tapl;
 
+let taplp n a =>
+  if (n == 0) {
+    print_endline "taplp---------";
+    List.iter f::(fun a => print_endline (ts a)) a;
+    a
+  } else {
+    a
+  };
+
+taplp;
+
 let sortPathsTopologically dir::dir paths::paths =>
+  /* List.map paths f::ts |> List.iter f::print_endline; */
   Dep.action_stdout (
     Dep.return {
       let pathsString = List.map paths f::(fun a => " -impl " ^ ts a) |> String.concat sep::" ";
@@ -98,12 +112,13 @@ let getDepModules dir::dir sourcePaths::sourcePaths =>
       bashf
         dir::dir
         "ocamldep -pp refmt -modules -one-line %s"
-        (List.map sourcePaths f::(fun a => " -impl " ^ ts a) |> String.concat sep::"")
+        (List.map sourcePaths f::(fun a => " -impl " ^ ts a) |> String.concat sep::"" |> tap 1)
     )
   ) *>>| (
   fun string =>
     String.strip string |>
       String.split on::'\n' |>
+      List.filter f::non_blank |>
       List.map
         f::(
           fun line =>
@@ -117,12 +132,59 @@ let getDepModules dir::dir sourcePaths::sourcePaths =>
 getDepModules;
 
 let scheme dir::dir => {
-  ignore dir;
   let srcDir = Path.root_relative "src";
   let buildDir = Path.root_relative ("_build/" ^ libName);
+  /* let moduleAliasFilePath = rel dir::buildDir (libName ^ ".re"); */
+  let moduleAliasFilePath = rel dir::buildDir "asda.re";
+  ignore dir;
   ignore buildDir;
   ignore srcDir;
+  ignore moduleAliasFilePath;
+  /* if (dir != Path.the_root) {
+       Scheme.no_rules
+     } else { */
   Scheme.all [
+    /* module alias generation */
+    Scheme.rules_dep (
+      Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>| (
+        fun paths => {
+          /* Printing all the globbed results. outout.re is being captured here. */
+          /* List.map paths f::Path.to_string |> List.iter f::print_endline;
+             print_endline @@ (Path.to_string dir ^ "================"); */
+          /* As a temporarily workaround, I can filter out _build/outout.re. If you uncomment next line there'd be no more
+             cycles */
+          let paths = List.filter paths f::(fun p => not (Path.is_descendant dir::buildDir p));
+          let moduleAliasFileContent =
+            List.map
+              (taplp 1 paths)
+              f::(
+                fun p => {
+                  let name = Path.basename p |> String.chop_suffix_exn suffix::".re";
+                  Printf.sprintf
+                    "let module %s = %s__%s;" (String.capitalize name) (String.capitalize libName) name
+                }
+              ) |>
+              String.concat sep::"\n";
+          /* List.map paths f::Path.to_string |> List.iter f::print_endline;
+             print_endline @@ (ts dir ^ "================"); */
+          [
+            Rule.create
+              targets::[moduleAliasFilePath]
+              (
+                Dep.all_unit (List.map paths f::Dep.path) *>>| (
+                  fun () =>
+                    bashf
+                      dir::Path.the_root
+                      "echo %s > %s"
+                      (Shell.escape moduleAliasFileContent)
+                      (ts moduleAliasFilePath)
+                )
+              )
+          ]
+        }
+      )
+    ),
+    /* compiling, no linking */
     Scheme.rules_dep (
       Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>= (
         fun rawPaths => sortPathsTopologically dir::Path.the_root paths::rawPaths *>>= (
@@ -143,6 +205,7 @@ let scheme dir::dir => {
                       | Some modules =>
                           List.map
                             (modules |> tapl 1)
+                            /* compiling here only needs cmi */
                             f::(fun m => Dep.path (rel dir::buildDir (String.uncapitalize m ^ ".cmi")))
                       };
                     Rule.create
@@ -164,13 +227,15 @@ let scheme dir::dir => {
         )
       )
     ),
+    /* linking */
     Scheme.rules_dep (
       Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>= (
         fun rawPaths => sortPathsTopologically dir::Path.the_root paths::rawPaths *>>| (
           fun paths => {
+            let paths = List.filter paths f::(fun p => not (Path.is_descendant dir::buildDir p));
             let depsString =
               List.map
-                paths
+                (taplp 0 paths)
                 f::(
                   fun p => (
                     Path.basename p |> String.chop_suffix_exn suffix::".re" |> rel dir::buildDir |> ts
@@ -191,8 +256,15 @@ let scheme dir::dir => {
         )
       )
     ),
-    Scheme.rules [Rule.default dir::Path.the_root [Dep.path (rel dir::buildDir "entry.out")]]
+    Scheme.rules [
+      /* Rule.default
+         dir::Path.the_root [Dep.path (rel dir::buildDir "entry.out")] */
+      Rule.default
+        dir::Path.the_root [Dep.path (rel dir::buildDir "entry.out"), Dep.path moduleAliasFilePath]
+      /* Rule.default dir::Path.the_root [Dep.path moduleAliasFilePath] */
+    ]
   ]
+  /* } */
 };
 
 let env = Env.create scheme;
