@@ -89,10 +89,14 @@ let scheme ~dir  =
   let srcDir = Path.root_relative "src" in
   let buildDir = Path.root_relative ("_build/" ^ libName) in
   let moduleAliasFilePath = rel ~dir:buildDir (libName ^ ".re") in
+  let moduleAliasCmoPath = rel ~dir:buildDir (libName ^ ".cmo") in
+  let moduleAliasCmiPath = rel ~dir:buildDir (libName ^ ".cmi") in
   ignore dir;
   ignore buildDir;
   ignore srcDir;
   ignore moduleAliasFilePath;
+  ignore moduleAliasCmoPath;
+  ignore moduleAliasCmiPath;
   Scheme.all
     [Scheme.rules_dep
        ((Dep.glob_listing (Glob.create ~dir:srcDir "*.re")) *>>|
@@ -115,7 +119,13 @@ let scheme ~dir  =
                    (fun ()  ->
                       bashf ~dir:Path.the_root "echo %s > %s"
                         (Shell.escape moduleAliasFileContent)
-                        (ts moduleAliasFilePath)))]));
+                        (ts moduleAliasFilePath)));
+             Rule.create ~targets:[moduleAliasCmoPath; moduleAliasCmiPath]
+               ((Dep.path moduleAliasFilePath) *>>|
+                  (fun ()  ->
+                     bashf ~dir:Path.the_root
+                       "ocamlc -pp refmt -g -no-alias-deps -w -49 -c -impl %s -o %s"
+                       (ts moduleAliasFilePath) (ts moduleAliasCmoPath)))]));
     Scheme.rules_dep
       ((Dep.glob_listing (Glob.create ~dir:srcDir "*.re")) *>>=
          (fun rawPaths  ->
@@ -184,6 +194,7 @@ let scheme ~dir  =
     Scheme.rules
       [Rule.default ~dir:Path.the_root
          [Dep.path (rel ~dir:buildDir "entry.out");
-         Dep.path moduleAliasFilePath]]]
+         Dep.path moduleAliasCmoPath;
+         Dep.path moduleAliasCmiPath]]]
 let env = Env.create scheme
 let setup () = Deferred.return env

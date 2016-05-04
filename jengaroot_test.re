@@ -135,10 +135,14 @@ let scheme dir::dir => {
   let srcDir = Path.root_relative "src";
   let buildDir = Path.root_relative ("_build/" ^ libName);
   let moduleAliasFilePath = rel dir::buildDir (libName ^ ".re");
+  let moduleAliasCmoPath = rel dir::buildDir (libName ^ ".cmo");
+  let moduleAliasCmiPath = rel dir::buildDir (libName ^ ".cmi");
   ignore dir;
   ignore buildDir;
   ignore srcDir;
   ignore moduleAliasFilePath;
+  ignore moduleAliasCmoPath;
+  ignore moduleAliasCmiPath;
   /* if (dir != Path.the_root) {
        Scheme.no_rules
      } else { */
@@ -177,6 +181,18 @@ let scheme dir::dir => {
                       "echo %s > %s"
                       (Shell.escape moduleAliasFileContent)
                       (ts moduleAliasFilePath)
+                )
+              ),
+            Rule.create
+              targets::[moduleAliasCmoPath, moduleAliasCmiPath]
+              (
+                Dep.path moduleAliasFilePath *>>| (
+                  fun () =>
+                    bashf
+                      dir::Path.the_root
+                      "ocamlc -pp refmt -g -no-alias-deps -w -49 -c -impl %s -o %s"
+                      (ts moduleAliasFilePath)
+                      (ts moduleAliasCmoPath)
                 )
               )
           ]
@@ -260,7 +276,8 @@ let scheme dir::dir => {
     ),
     Scheme.rules [
       Rule.default
-        dir::Path.the_root [Dep.path (rel dir::buildDir "entry.out"), Dep.path moduleAliasFilePath]
+        dir::Path.the_root
+        [Dep.path (rel dir::buildDir "entry.out"), Dep.path moduleAliasCmoPath, Dep.path moduleAliasCmiPath]
     ]
   ]
   /* } */
