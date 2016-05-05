@@ -1,4 +1,4 @@
-let x = B.x;
-/* let x = 100; */
+/* let x = B.x; */
+let x = 100;
 
-print_endline "fridays";
+print_endline "fridaya";
