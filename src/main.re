@@ -1,2 +1,3 @@
-print_int (A.x + B.x + C.x);
+print_int (A.x + B.x);
+
 print_endline "fuck";
