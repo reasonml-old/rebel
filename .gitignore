@@ -1,0 +1,5 @@
+.*
+!.gitignore
+*.cmi
+*.cmo
+_build/
