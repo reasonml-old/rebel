@@ -172,11 +172,6 @@ let topLibName = "hi";
 
 topLibName;
 
-let getThirdPartyModules allDeps firstPartyDeps =>
-  List.filter allDeps f::(fun dep => List.exists firstPartyDeps f::(fun d => d == dep));
-
-getThirdPartyModules;
-
 let compileLib
     isTopLevelLib::isTopLevelLib=true
     srcDir::srcDir
@@ -360,7 +355,29 @@ let compileLib
                   ),
                 Rule.default dir::buildDir [Dep.path cmaPath]
               ];
-              moduleAliasContentRules @ moduleAliasCompileRules @ sourcesCompileRules @ cmaCompileRules
+              let finalOutputRules =
+                if isTopLevelLib {
+                  let topOutputPath = rel dir::buildDir "output.out";
+                  [
+                    /* ocamlc -g -o _build/hi/entry.out _build/hi/lib.cma _build/hi/hi__main.cmo */
+                    Rule.simple
+                      targets::[topOutputPath]
+                      deps::[Dep.path cmaPath, Dep.path (rel dir::buildDir "hi__main.cmo")]
+                      action::(
+                        bashf
+                          dir::buildDir
+                          "ocamlc -g -o %s %s %s"
+                          (Path.basename topOutputPath)
+                          (Path.basename cmaPath)
+                          "hi__main.cmo"
+                      ),
+                    Rule.default dir::buildDir [Dep.path topOutputPath]
+                  ]
+                } else {
+                  []
+                };
+              moduleAliasContentRules @
+                moduleAliasCompileRules @ sourcesCompileRules @ cmaCompileRules @ finalOutputRules
             }
           )
         )
@@ -406,7 +423,7 @@ let scheme dir::dir => {
                  )
            )
          ), */
-      Scheme.rules [Rule.default dir::dir [Dep.path (rel dir::buildDirHi "lib.cma")]],
+      Scheme.rules [Rule.default dir::dir [Dep.path (rel dir::buildDirHi "output.out")]],
       Scheme.dep (
         Dep.subdirs dir::nodeModulesRoot *>>| (
           fun thirdPartyDepsRoots => {
@@ -455,12 +472,14 @@ let scheme dir::dir => {
       } else {
         rel dir::(rel dir::nodeModulesRoot libName) "src"
       };
-    compileLib
-      srcDir::srcDir
-      isTopLevelLib::true
-      libName::libName
-      buildDir::(rel dir::buildDirRoot libName)
-      buildDirRoot::buildDirRoot
+    Scheme.all [
+      compileLib
+        srcDir::srcDir
+        isTopLevelLib::true
+        libName::libName
+        buildDir::(rel dir::buildDirRoot libName)
+        buildDirRoot::buildDirRoot
+    ]
   } else {
     Scheme.no_rules
   }

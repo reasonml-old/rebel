@@ -100,10 +100,6 @@ let getDepModules ~dir  ~sourcePaths  =
 let _ = getDepModules
 let topLibName = "hi"
 let _ = topLibName
-let getThirdPartyModules allDeps firstPartyDeps =
-  List.filter allDeps
-    ~f:(fun dep  -> List.exists firstPartyDeps ~f:(fun d  -> d = dep))
-let _ = getThirdPartyModules
 let compileLib ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir 
   ~buildDirRoot  =
   ignore isTopLevelLib;
@@ -248,9 +244,23 @@ let compileLib ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                      ((List.map cmos ~f:Path.basename) |>
                                         (String.concat ~sep:" ")));
                        Rule.default ~dir:buildDir [Dep.path cmaPath]] in
+                     let finalOutputRules =
+                       if isTopLevelLib
+                       then
+                         let topOutputPath = rel ~dir:buildDir "output.out" in
+                         [Rule.simple ~targets:[topOutputPath]
+                            ~deps:[Dep.path cmaPath;
+                                  Dep.path (rel ~dir:buildDir "hi__main.cmo")]
+                            ~action:(bashf ~dir:buildDir
+                                       "ocamlc -g -o %s %s %s"
+                                       (Path.basename topOutputPath)
+                                       (Path.basename cmaPath) "hi__main.cmo");
+                         Rule.default ~dir:buildDir [Dep.path topOutputPath]]
+                       else [] in
                      moduleAliasContentRules @
                        (moduleAliasCompileRules @
-                          (sourcesCompileRules @ cmaCompileRules)))))))
+                          (sourcesCompileRules @
+                             (cmaCompileRules @ finalOutputRules))))))))
 let scheme ~dir  =
   let nodeModulesRoot = Path.root_relative "node_modules" in
   let buildDirRoot = Path.root_relative "_build" in
@@ -274,7 +284,7 @@ let scheme ~dir  =
   then
     Scheme.all
       [Scheme.rules
-         [Rule.default ~dir [Dep.path (rel ~dir:buildDirHi "lib.cma")]];
+         [Rule.default ~dir [Dep.path (rel ~dir:buildDirHi "output.out")]];
       Scheme.dep
         ((Dep.subdirs ~dir:nodeModulesRoot) *>>|
            (fun thirdPartyDepsRoots  ->
@@ -296,8 +306,9 @@ let scheme ~dir  =
          if libName = topLibName
          then rel ~dir:root "src"
          else rel ~dir:(rel ~dir:nodeModulesRoot libName) "src" in
-       compileLib ~srcDir ~isTopLevelLib:true ~libName
-         ~buildDir:(rel ~dir:buildDirRoot libName) ~buildDirRoot)
+       Scheme.all
+         [compileLib ~srcDir ~isTopLevelLib:true ~libName
+            ~buildDir:(rel ~dir:buildDirRoot libName) ~buildDirRoot])
     else Scheme.no_rules
 let env = Env.create scheme
 let setup () = Deferred.return env
