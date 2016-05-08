@@ -112,10 +112,6 @@ let fileNameNoExtNoDir path suffix::suffix => Path.basename path |> String.chop_
 
 fileNameNoExtNoDir;
 
-let filterOutModuleAliasFile paths => paths;
-
-filterOutModuleAliasFile;
-
 let sortPathsTopologically dir::dir paths::paths =>
   /* List.map paths f::ts |> List.iter f::print_endline; */
   Dep.action_stdout (
@@ -123,7 +119,7 @@ let sortPathsTopologically dir::dir paths::paths =>
       /* Dep.glob_change (Glob.create dir::dir "*.re"),
          Dep.glob_change (Glob.create dir::dir "*.rei"), */
       List.map
-        (filterOutModuleAliasFile paths) f::Dep.path
+        paths f::Dep.path
     )
       *>>| (
       fun () => {
@@ -143,7 +139,7 @@ let getDepModules dir::dir sourcePaths::sourcePaths =>
       /* Dep.glob_change (Glob.create dir::dir "*.re"),
          Dep.glob_change (Glob.create dir::dir "*.rei"), */
       List.map
-        (filterOutModuleAliasFile sourcePaths) f::Dep.path
+        sourcePaths f::Dep.path
     )
       *>>| (
       fun () =>
@@ -157,7 +153,7 @@ let getDepModules dir::dir sourcePaths::sourcePaths =>
     )
   ) *>>| (
   fun string =>
-    String.strip (tap 0 string) |>
+    String.strip (tap 1 string) |>
       String.split on::'\n' |>
       List.filter f::non_blank |>
       List.map
@@ -176,7 +172,17 @@ let topLibName = "hi";
 
 topLibName;
 
-let compileLib isTopLevelLib::isTopLevelLib=true srcDir::srcDir libName::libName buildDir::buildDir => {
+let getThirdPartyModules allDeps firstPartyDeps =>
+  List.filter allDeps f::(fun dep => List.exists firstPartyDeps f::(fun d => d == dep));
+
+getThirdPartyModules;
+
+let compileLib
+    isTopLevelLib::isTopLevelLib=true
+    srcDir::srcDir
+    libName::libName
+    buildDir::buildDir
+    buildDirRoot::buildDirRoot => {
   ignore isTopLevelLib;
   let moduleAliasFilePath = rel dir::buildDir (libName ^ ".re");
   let moduleAliasCmoPath = rel dir::buildDir (libName ^ ".cmo");
@@ -184,7 +190,8 @@ let compileLib isTopLevelLib::isTopLevelLib=true srcDir::srcDir libName::libName
   Scheme.rules_dep (
     Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>= (
       fun unsortedPaths => {
-        let filteredUnsortedPaths = filterOutModuleAliasFile unsortedPaths;
+        /* discard third party deps, compile them separately */
+        let filteredUnsortedPaths = unsortedPaths;
         sortPathsTopologically dir::srcDir paths::filteredUnsortedPaths *>>= (
           fun sortedPaths => getDepModules dir::srcDir sourcePaths::sortedPaths *>>| (
             fun assocList => {
@@ -248,9 +255,32 @@ let compileLib isTopLevelLib::isTopLevelLib=true srcDir::srcDir libName::libName
                         | None => failwith ("lookup: " ^ ts path)
                         | Some modules => modules
                         };
-                      let moduleDeps =
-                        List.map
+                      let firstPartyModules =
+                        List.filter
                           (tapl 1 modules)
+                          f::(
+                            fun m =>
+                              List.exists
+                                sortedPaths
+                                f::(
+                                  fun path => (fileNameNoExtNoDir suffix::".re" path |> String.capitalize) == m
+                                )
+                          );
+                      let thirdPartyModules =
+                        List.filter
+                          modules
+                          f::(
+                            fun m => not (
+                              List.exists
+                                sortedPaths
+                                f::(
+                                  fun path => (fileNameNoExtNoDir suffix::".re" path |> String.capitalize) == m
+                                )
+                            )
+                          );
+                      let firstPartyModuleDeps =
+                        List.map
+                          (tapl 1 firstPartyModules)
                           /* compiling here only needs cmi */
                           f::(
                             fun m => Dep.path (
@@ -269,15 +299,26 @@ let compileLib isTopLevelLib::isTopLevelLib=true srcDir::srcDir libName::libName
                               Dep.path moduleAliasCmiPath,
                               Dep.path moduleAliasCmoPath,
                               Dep.path moduleAliasFilePath,
-                              ...moduleDeps
+                              ...firstPartyModuleDeps
                             ]
                               *>>| (
                               fun () =>
                                 bashf
                                   dir::buildDir
-                                  "ocamlc -pp refmt -g -open %s -I %s -o %s -intf-suffix rei -c -impl %s"
+                                  "ocamlc -pp refmt -g -open %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
                                   (String.capitalize libName)
                                   (ts buildDir)
+                                  (
+                                    List.map
+                                      thirdPartyModules
+                                      f::(
+                                        fun m => "-I " ^ (
+                                          String.uncapitalize m |>
+                                            rel dir::buildDirRoot |> Path.reach_from dir::buildDir
+                                        )
+                                      ) |>
+                                      String.concat sep::" "
+                                  )
                                   outNameNoExtNoDir
                                   (Path.reach_from dir::buildDir path)
                             )
@@ -286,7 +327,40 @@ let compileLib isTopLevelLib::isTopLevelLib=true srcDir::srcDir libName::libName
                       ]
                     }
                   );
-              moduleAliasContentRules @ moduleAliasCompileRules @ sourcesCompileRules
+              let cmos =
+                List.map
+                  sortedPaths
+                  f::(
+                    fun path => {
+                      let outNameNoExtNoDir = libName ^ "__" ^ fileNameNoExtNoDir path suffix::".re";
+                      rel dir::buildDir (outNameNoExtNoDir ^ ".cmo")
+                    }
+                  );
+              let cmaPath = rel dir::buildDir "lib.cma";
+              let cmaCompileRules = [
+                /* ocamlc -g -open Hi -a -o
+                   _build/hi/lib.cma
+                   _build/hi/hi.cmo
+                   _build/hi/hi__b.cmo
+                   _build/hi/hi__a.cmo
+                   _build/hi/hi__c.cmo
+                   _build/hi/hi__main.cmo
+                    */
+                Rule.simple
+                  targets::[rel dir::buildDir "lib.cma"]
+                  deps::[Dep.path moduleAliasCmoPath, ...List.map cmos f::Dep.path]
+                  action::(
+                    bashf
+                      dir::buildDir
+                      "ocamlc -g -open %s -a -o %s %s %s"
+                      (String.capitalize libName)
+                      (Path.basename cmaPath)
+                      (Path.basename moduleAliasCmoPath)
+                      (List.map cmos f::Path.basename |> String.concat sep::" ")
+                  ),
+                Rule.default dir::buildDir [Dep.path cmaPath]
+              ];
+              moduleAliasContentRules @ moduleAliasCompileRules @ sourcesCompileRules @ cmaCompileRules
             }
           )
         )
@@ -316,22 +390,23 @@ let scheme dir::dir => {
   print_endline @@ (ts dir ^ "<<<<<<<<<<<<<<<");
   if (dir == root || Path.basename dir == "src") {
     Scheme.all [
-      Scheme.rules_dep (
-        Dep.glob_listing (Glob.create dir::srcDirHi "*.re") *>>| (
-          fun paths =>
-            List.map
-              (filterOutModuleAliasFile paths)
-              f::(
-                fun path => {
-                  ignore path;
-                  let outNameNoExtNoDir = libNameHi ^ "__" ^ fileNameNoExtNoDir path suffix::".re";
-                  let outCmi = rel dir::buildDirHi (outNameNoExtNoDir ^ ".cmi") |> tapp 1;
-                  let outCmo = rel dir::buildDirHi (outNameNoExtNoDir ^ ".cmo");
-                  Rule.default dir::dir [Dep.path (tapp 1 outCmi), Dep.path outCmo]
-                }
-              )
-        )
-      ),
+      /* Scheme.rules_dep (
+           Dep.glob_listing (Glob.create dir::srcDirHi "*.re") *>>| (
+             fun paths =>
+               List.map
+                 paths
+                 f::(
+                   fun path => {
+                     ignore path;
+                     let outNameNoExtNoDir = libNameHi ^ "__" ^ fileNameNoExtNoDir path suffix::".re";
+                     let outCmi = rel dir::buildDirHi (outNameNoExtNoDir ^ ".cmi") |> tapp 1;
+                     let outCmo = rel dir::buildDirHi (outNameNoExtNoDir ^ ".cmo");
+                     Rule.default dir::dir [Dep.path (tapp 1 outCmi), Dep.path outCmo]
+                   }
+                 )
+           )
+         ), */
+      Scheme.rules [Rule.default dir::dir [Dep.path (rel dir::buildDirHi "lib.cma")]],
       Scheme.dep (
         Dep.subdirs dir::nodeModulesRoot *>>| (
           fun thirdPartyDepsRoots => {
@@ -343,48 +418,32 @@ let scheme dir::dir => {
                 f::(
                   fun depRoot => {
                     let libName = Path.basename depRoot;
-                    print_endline @@ (libName ^ "111111111111111111111111111111111");
-                    let srcDir = rel dir::depRoot "src";
+                    /* let srcDir = rel dir::depRoot "src"; */
                     let buildDir = rel dir::buildDirRoot libName;
-                    Scheme.rules_dep (
-                      Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>| (
-                        fun paths =>
-                          List.map
-                            (filterOutModuleAliasFile paths)
-                            f::(
-                              fun path => {
-                                ignore path;
-                                let outNameNoExtNoDir =
-                                  libName ^ "__" ^ fileNameNoExtNoDir path suffix::".re";
-                                let outCmi = rel dir::buildDir (outNameNoExtNoDir ^ ".cmi") |> tapp 1;
-                                let outCmo = rel dir::buildDir (outNameNoExtNoDir ^ ".cmo");
-                                Rule.default dir::dir [Dep.path (tapp 1 outCmi), Dep.path outCmo]
-                              }
-                            )
-                      )
-                    )
+                    Scheme.rules [Rule.default dir::dir [Dep.path (rel dir::buildDir "lib.cma")]]
+                    /* Scheme.rules_dep (
+                         Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>| (
+                           fun paths =>
+                             List.map
+                               paths
+                               f::(
+                                 fun path => {
+                                   ignore path;
+                                   let outNameNoExtNoDir =
+                                     libName ^ "__" ^ fileNameNoExtNoDir path suffix::".re";
+                                   let outCmi = rel dir::buildDir (outNameNoExtNoDir ^ ".cmi") |> tapp 1;
+                                   let outCmo = rel dir::buildDir (outNameNoExtNoDir ^ ".cmo");
+                                   Rule.default dir::dir [Dep.path (tapp 1 outCmi), Dep.path outCmo]
+                                 }
+                               )
+                         )
+                       ) */
                   }
                 )
             )
           }
         )
       )
-      /* Scheme.rules_dep (
-           Dep.glob_listing (Glob.create dir::srcDirHi "*.re") *>>| (
-             fun paths =>
-               List.map
-                 (filterOutModuleAliasFile paths)
-                 f::(
-                   fun path => {
-                     ignore path;
-                     let outNameNoExtNoDir = libNameHi ^ "__" ^ fileNameNoExtNoDir path suffix::".re";
-                     let outCmi = rel dir::buildDirHi (outNameNoExtNoDir ^ ".cmi") |> tapp 1;
-                     let outCmo = rel dir::buildDirHi (outNameNoExtNoDir ^ ".cmo");
-                     Rule.default dir::dir [Dep.path (tapp 1 outCmi), Dep.path outCmo]
-                   }
-                 )
-           )
-         ) */
     ]
   } else if (
     Path.is_descendant dir::(rel dir::root "_build") dir
@@ -396,10 +455,12 @@ let scheme dir::dir => {
       } else {
         rel dir::(rel dir::nodeModulesRoot libName) "src"
       };
-    Scheme.all [
-      compileLib
-        srcDir::srcDir isTopLevelLib::true libName::libName buildDir::(rel dir::buildDirRoot libName)
-    ]
+    compileLib
+      srcDir::srcDir
+      isTopLevelLib::true
+      libName::libName
+      buildDir::(rel dir::buildDirRoot libName)
+      buildDirRoot::buildDirRoot
   } else {
     Scheme.no_rules
   }
