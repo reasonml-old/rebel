@@ -99,29 +99,17 @@ let getDepModules ~dir  ~sourcePaths  =
 let _ = getDepModules
 let topLibName = "hi"
 let _ = topLibName
-let fuckingSort ~firstNode  muhGraph =
-  print_endline "mahhhhhhhhhhhhhhhhhhhhhhh";
-  List.iter muhGraph
-    ~f:(fun (n,deps)  ->
-          print_string n;
-          print_string ": ";
-          List.iter deps ~f:print_endline;
-          print_endline "---");
-  print_endline "mahhhhhhhhhhhhhhhhhhhhhhh";
-  (let rec fuckingSort' currNode muhGraph accum =
-     let (_,nodeDeps) =
-       List.find_exn muhGraph ~f:(fun (n,_)  -> n = currNode) in
-     List.iter nodeDeps ~f:(fun dep  -> fuckingSort' dep muhGraph accum);
-     if not @@ (List.exists accum.contents ~f:(fun n  -> n = currNode))
-     then accum := (currNode :: (accum.contents)) in
-   let accum = { contents = [] } in
-   fuckingSort' firstNode muhGraph accum;
-   print_endline "mahhhhhhhhhhhhhhhhhhhhhhh----------------";
-   List.iter ~f:print_endline accum.contents;
-   print_endline "mahhhhhhhhhhhhhhhhhhhhhhh----------------";
-   (List.rev accum.contents) |> (List.filter ~f:(fun m  -> m <> firstNode)))
-let _ = fuckingSort
-let fuckItAll ~buildDirRoot  =
+let topologicallySort ~firstNode  muhGraph =
+  let rec topologicallySort' currNode muhGraph accum =
+    let (_,nodeDeps) = List.find_exn muhGraph ~f:(fun (n,_)  -> n = currNode) in
+    List.iter nodeDeps ~f:(fun dep  -> topologicallySort' dep muhGraph accum);
+    if not @@ (List.exists accum.contents ~f:(fun n  -> n = currNode))
+    then accum := (currNode :: (accum.contents)) in
+  let accum = { contents = [] } in
+  topologicallySort' firstNode muhGraph accum;
+  (List.rev accum.contents) |> (List.filter ~f:(fun m  -> m <> firstNode))
+let _ = topologicallySort
+let sortTransitiveThirdParties ~buildDirRoot  =
   (Dep.subdirs ~dir:buildDirRoot) *>>=
     (fun thirdPartyBuildRoots  ->
        let thirdPartyDepsDeps =
@@ -146,12 +134,12 @@ let fuckItAll ~buildDirRoot  =
                                       ~f:(fun m'  -> m = m')))))) in
        (Dep.all thirdPartyDepsDeps) *>>|
          (fun depsDeps  ->
-            fuckingSort ~firstNode:"Hi"
+            topologicallySort ~firstNode:"Hi"
               (List.zip_exn
                  (List.map thirdPartyBuildRoots
                     ~f:(fun r  -> (Path.basename r) |> String.capitalize))
                  depsDeps)))
-let _ = fuckItAll
+let _ = sortTransitiveThirdParties
 let compileLib ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir 
   ~buildDirRoot  =
   ignore isTopLevelLib;
@@ -298,7 +286,7 @@ let compileLib ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                        if isTopLevelLib
                        then
                          Scheme.dep @@
-                           ((fuckItAll ~buildDirRoot) *>>|
+                           ((sortTransitiveThirdParties ~buildDirRoot) *>>|
                               (fun thirdPartyTransitiveFuckingModules  ->
                                  let transitiveCmaPaths =
                                    List.map

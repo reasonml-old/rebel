@@ -176,8 +176,8 @@ let topLibName = "hi";
 
 topLibName;
 
-let fuckingSort firstNode::firstNode muhGraph => {
-  print_endline "mahhhhhhhhhhhhhhhhhhhhhhh";
+let topologicallySort firstNode::firstNode muhGraph => {
+  /* print_endline "mahhhhhhhhhhhhhhhhhhhhhhh";
   List.iter
     muhGraph
     f::(
@@ -188,27 +188,27 @@ let fuckingSort firstNode::firstNode muhGraph => {
         print_endline "---"
       }
     );
-  print_endline "mahhhhhhhhhhhhhhhhhhhhhhh";
-  let rec fuckingSort' currNode muhGraph accum => {
+  print_endline "mahhhhhhhhhhhhhhhhhhhhhhh"; */
+  let rec topologicallySort' currNode muhGraph accum => {
     let (_, nodeDeps) = List.find_exn muhGraph f::(fun (n, _) => n == currNode);
     /* if (nodeDeps == []) {
        } else { */
-    List.iter nodeDeps f::(fun dep => fuckingSort' dep muhGraph accum);
+    List.iter nodeDeps f::(fun dep => topologicallySort' dep muhGraph accum);
     if (not @@ List.exists accum.contents f::(fun n => n == currNode)) {
       accum := [currNode, ...accum.contents]
     }
   };
   let accum = {contents: []};
-  fuckingSort' firstNode muhGraph accum;
-  print_endline "mahhhhhhhhhhhhhhhhhhhhhhh----------------";
+  topologicallySort' firstNode muhGraph accum;
+  /* print_endline "mahhhhhhhhhhhhhhhhhhhhhhh----------------";
   List.iter f::print_endline accum.contents;
-  print_endline "mahhhhhhhhhhhhhhhhhhhhhhh----------------";
+  print_endline "mahhhhhhhhhhhhhhhhhhhhhhh----------------"; */
   List.rev accum.contents |> List.filter f::(fun m => m != firstNode)
 };
 
-fuckingSort;
+topologicallySort;
 
-let fuckItAll buildDirRoot::buildDirRoot => Dep.subdirs dir::buildDirRoot *>>= (
+let sortTransitiveThirdParties buildDirRoot::buildDirRoot => Dep.subdirs dir::buildDirRoot *>>= (
   fun thirdPartyBuildRoots => {
     let thirdPartyDepsDeps =
       List.map
@@ -232,7 +232,8 @@ let fuckItAll buildDirRoot::buildDirRoot => Dep.subdirs dir::buildDirRoot *>>= (
         );
     Dep.all thirdPartyDepsDeps *>>| (
       fun depsDeps =>
-        fuckingSort
+        topologicallySort
+          /* TODO: don't hard-code this */
           firstNode::"Hi"
           (
             List.zip_exn
@@ -242,7 +243,7 @@ let fuckItAll buildDirRoot::buildDirRoot => Dep.subdirs dir::buildDirRoot *>>= (
   }
 );
 
-fuckItAll;
+sortTransitiveThirdParties;
 
 let compileLib
     isTopLevelLib::isTopLevelLib=true
@@ -420,7 +421,7 @@ let compileLib
               let cmaCompileRulesScheme =
                 if isTopLevelLib {
                   Scheme.dep @@
-                    fuckItAll buildDirRoot::buildDirRoot *>>| (
+                    sortTransitiveThirdParties buildDirRoot::buildDirRoot *>>| (
                       fun thirdPartyTransitiveFuckingModules => {
                         let transitiveCmaPaths =
                           List.map
