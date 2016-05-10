@@ -108,6 +108,8 @@ let tapp n a =>
 
 tapp;
 
+let stdlibModules = ["List", "String", "Set", "Queue", "Printf", "Stack"];
+
 let fileNameNoExtNoDir path suffix::suffix => Path.basename path |> String.chop_suffix_exn suffix::suffix;
 
 fileNameNoExtNoDir;
@@ -141,7 +143,12 @@ let parseOcamlDepModulesOutput dir::dir raw =>
       f::(
         fun line =>
           switch (String.strip line |> String.split on::':') {
-          | [path, deps] => (rel dir::dir path, String.split deps on::' ' |> List.filter f::non_blank)
+          | [path, deps] => (
+              rel dir::dir path,
+              String.split deps on::' ' |>
+                List.filter f::non_blank |>
+                List.filter f::(fun d => not (List.exists stdlibModules f::(fun m => m == d)))
+            )
           | _ => failwith "expected exactly one ':' in ocamldep output line"
           }
       );

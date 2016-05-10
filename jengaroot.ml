@@ -57,6 +57,7 @@ let tapp n a =
   then (print_endline "tapp---------"; print_endline @@ (ts a); a)
   else a
 let _ = tapp
+let stdlibModules = ["List"; "String"; "Set"; "Queue"; "Printf"; "Stack"]
 let fileNameNoExtNoDir path ~suffix  =
   (Path.basename path) |> (String.chop_suffix_exn ~suffix)
 let _ = fileNameNoExtNoDir
@@ -84,7 +85,14 @@ let parseOcamlDepModulesOutput ~dir  raw =
              match (String.strip line) |> (String.split ~on:':') with
              | path::deps::[] ->
                  ((rel ~dir path),
-                   ((String.split deps ~on:' ') |> (List.filter ~f:non_blank)))
+                   (((String.split deps ~on:' ') |>
+                       (List.filter ~f:non_blank))
+                      |>
+                      (List.filter
+                         ~f:(fun d  ->
+                               not
+                                 (List.exists stdlibModules
+                                    ~f:(fun m  -> m = d))))))
              | _ ->
                  failwith "expected exactly one ':' in ocamldep output line"))
 let _ = parseOcamlDepModulesOutput
