@@ -65,9 +65,11 @@ let sortPathsTopologically ~dir  ~paths  =
      ((Dep.all_unit (List.map paths ~f:Dep.path)) *>>|
         (fun ()  ->
            let pathsString =
-             (List.map paths ~f:(fun a  -> " -impl " ^ (Path.basename a))) |>
-               (String.concat ~sep:" ") in
-           bashf ~dir "ocamldep -pp refmt -sort -one-line %s" pathsString)))
+             (List.map (taplp 0 paths)
+                ~f:(fun a  -> " -impl " ^ (Path.basename a)))
+               |> (String.concat ~sep:" ") in
+           bashf ~dir "ocamldep -pp refmt -sort -one-line %s"
+             (tap 1 pathsString))))
     *>>|
     (fun string  ->
        ((String.split string ~on:' ') |> (List.filter ~f:non_blank)) |>
@@ -101,7 +103,10 @@ let topLibName = "hi"
 let _ = topLibName
 let topologicallySort ~firstNode  muhGraph =
   let rec topologicallySort' currNode muhGraph accum =
-    let (_,nodeDeps) = List.find_exn muhGraph ~f:(fun (n,_)  -> n = currNode) in
+    let nodeDeps =
+      match List.find muhGraph ~f:(fun (n,_)  -> n = currNode) with
+      | None  -> raise ((Invalid_argument (currNode)))
+      | ((Some ((_,nodeDeps)))) -> nodeDeps in
     List.iter nodeDeps ~f:(fun dep  -> topologicallySort' dep muhGraph accum);
     if not @@ (List.exists accum.contents ~f:(fun n  -> n = currNode))
     then accum := (currNode :: (accum.contents)) in
@@ -109,39 +114,48 @@ let topologicallySort ~firstNode  muhGraph =
   topologicallySort' firstNode muhGraph accum;
   (List.rev accum.contents) |> (List.filter ~f:(fun m  -> m <> firstNode))
 let _ = topologicallySort
-let sortTransitiveThirdParties ~buildDirRoot  =
-  (Dep.subdirs ~dir:buildDirRoot) *>>=
-    (fun thirdPartyBuildRoots  ->
-       let thirdPartyDepsDeps =
-         List.map thirdPartyBuildRoots
-           ~f:(fun buildRoot  ->
-                 let dependenciesFilePath = rel ~dir:buildRoot "dependencies" in
-                 (Dep.contents dependenciesFilePath) *>>|
-                   (fun raw  ->
-                      let assocList =
-                        parseOcamlDepModulesOutput ~dir:buildRoot raw in
-                      let (paths,allDeps) = List.unzip assocList in
-                      let firstPartyModules =
-                        List.map paths
-                          ~f:(fun path  ->
-                                (fileNameNoExtNoDir ~suffix:".re" path) |>
-                                  String.capitalize) in
-                      ((List.concat allDeps) |> List.dedup) |>
-                        (List.filter
-                           ~f:(fun m  ->
-                                 not
-                                   (List.exists firstPartyModules
-                                      ~f:(fun m'  -> m = m')))))) in
-       (Dep.all thirdPartyDepsDeps) *>>|
-         (fun depsDeps  ->
-            topologicallySort ~firstNode:"Hi"
-              (List.zip_exn
-                 (List.map thirdPartyBuildRoots
-                    ~f:(fun r  -> (Path.basename r) |> String.capitalize))
-                 depsDeps)))
+let sortTransitiveThirdParties ~topLibName  ~nodeModulesRoot  ~buildDirRoot 
+  =
+  ignore nodeModulesRoot;
+  ignore buildDirRoot;
+  (Dep.subdirs ~dir:nodeModulesRoot) *>>=
+    ((fun thirdPartyNodeModulesRoots  ->
+        let buildRoots = (rel ~dir:buildDirRoot topLibName) ::
+          (List.map thirdPartyNodeModulesRoots
+             ~f:(fun buildRoot  ->
+                   rel ~dir:buildDirRoot (Path.basename buildRoot))) in
+        let dependenciesFiles =
+          List.map buildRoots
+            ~f:(fun buildRoot  -> rel ~dir:buildRoot "dependencies") in
+        (Dep.all (List.map dependenciesFiles ~f:Dep.contents)) *>>|
+          (fun raws  ->
+             let depsDeps =
+               List.mapi raws
+                 ~f:(fun i  ->
+                       fun raw  ->
+                         let buildRoot = List.nth_exn buildRoots i in
+                         let assocList =
+                           parseOcamlDepModulesOutput ~dir:buildRoot raw in
+                         let (paths,allDeps) = List.unzip assocList in
+                         let firstPartyModules =
+                           List.map paths
+                             ~f:(fun path  ->
+                                   (fileNameNoExtNoDir ~suffix:".re" path) |>
+                                     String.capitalize) in
+                         ((List.concat allDeps) |> List.dedup) |>
+                           (List.filter
+                              ~f:(fun m  ->
+                                    not
+                                      (List.exists firstPartyModules
+                                         ~f:(fun m'  -> m = m'))))) in
+             topologicallySort ~firstNode:"Hi"
+               (List.zip_exn
+                  (List.map buildRoots
+                     ~f:(fun r  -> (Path.basename r) |> String.capitalize))
+                  depsDeps))))
 let _ = sortTransitiveThirdParties
 let compileLib ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir 
-  ~buildDirRoot  =
+  ~nodeModulesRoot  ~buildDirRoot  =
   ignore isTopLevelLib;
   (let moduleAliasFilePath = rel ~dir:buildDir (libName ^ ".re") in
    let moduleAliasCmoPath = rel ~dir:buildDir (libName ^ ".cmo") in
@@ -250,7 +264,18 @@ let compileLib ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                        Dep.path moduleAliasCmiPath;
                                        Dep.path moduleAliasCmoPath;
                                        Dep.path moduleAliasFilePath] @
-                                         firstPartyModuleDeps))
+                                         (firstPartyModuleDeps @
+                                            (List.map
+                                               (tapl 0 thirdPartyModules)
+                                               ~f:(fun m  ->
+                                                     let libName =
+                                                       String.uncapitalize m in
+                                                     (rel
+                                                        ~dir:(rel
+                                                                ~dir:buildDirRoot
+                                                                libName)
+                                                        (libName ^ ".cmi"))
+                                                       |> Dep.path)))))
                                      *>>|
                                      (fun ()  ->
                                         bashf ~dir:buildDir
@@ -286,7 +311,9 @@ let compileLib ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                        if isTopLevelLib
                        then
                          Scheme.dep @@
-                           ((sortTransitiveThirdParties ~buildDirRoot) *>>|
+                           ((sortTransitiveThirdParties ~topLibName:libName
+                               ~nodeModulesRoot ~buildDirRoot)
+                              *>>|
                               (fun thirdPartyTransitiveFuckingModules  ->
                                  let transitiveCmaPaths =
                                    List.map
@@ -369,24 +396,11 @@ let scheme ~dir  =
   ignore buildDirHi;
   ignore libNameHi;
   print_endline @@ ((ts dir) ^ "<<<<<<<<<<<<<<<");
-  if (dir = root) || ((Path.basename dir) = "src")
+  if (dir = root) || (dir = (rel ~dir:root "src"))
   then
     Scheme.all
       [Scheme.rules
-         [Rule.default ~dir [Dep.path (rel ~dir:buildDirHi "output.out")]];
-      Scheme.dep
-        ((Dep.subdirs ~dir:nodeModulesRoot) *>>|
-           (fun thirdPartyDepsRoots  ->
-              let a = 1 in
-              ignore a;
-              Scheme.all
-                (List.map thirdPartyDepsRoots
-                   ~f:(fun depRoot  ->
-                         let libName = Path.basename depRoot in
-                         let buildDir = rel ~dir:buildDirRoot libName in
-                         Scheme.rules
-                           [Rule.default ~dir
-                              [Dep.path (rel ~dir:buildDir "lib.cma")]]))))]
+         [Rule.default ~dir [Dep.path (rel ~dir:buildDirHi "output.out")]]]
   else
     if Path.is_descendant ~dir:(rel ~dir:root "_build") dir
     then
@@ -396,7 +410,8 @@ let scheme ~dir  =
          then rel ~dir:root "src"
          else rel ~dir:(rel ~dir:nodeModulesRoot libName) "src" in
        compileLib ~srcDir ~isTopLevelLib:(libName = libNameHi) ~libName
-         ~buildDir:(rel ~dir:buildDirRoot libName) ~buildDirRoot)
+         ~buildDir:(rel ~dir:buildDirRoot libName) ~buildDirRoot
+         ~nodeModulesRoot)
     else Scheme.no_rules
 let env = Env.create scheme
 let setup () = Deferred.return env
