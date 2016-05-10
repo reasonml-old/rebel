@@ -377,14 +377,40 @@ let compileLibScheme
                                 Dep.path moduleAliasFilePath
                               ] @
                                 firstPartyModuleDeps @
-                                List.map
-                                  (tapl 1 thirdPartyModules)
-                                  f::(
-                                    fun m => {
-                                      let libName = String.uncapitalize m;
-                                      rel dir::(rel dir::buildDirRoot libName) (libName ^ ".cmi") |> Dep.path
-                                    }
+                                [
+                                  Dep.all_unit (
+                                    List.map
+                                      (tapl 1 thirdPartyModules)
+                                      f::(
+                                        fun m => {
+                                          let libName = String.uncapitalize m;
+                                          Dep.glob_listing (
+                                            Glob.create
+                                              dir::(rel dir::(rel dir::nodeModulesRoot libName) "src") "*.re"
+                                          )
+                                            *>>= (
+                                            fun sources => Dep.all_unit (
+                                              List.map
+                                                sources
+                                                f::(
+                                                  fun sourcePath => Dep.path (
+                                                    rel
+                                                      dir::(rel dir::buildDirRoot libName)
+                                                      (
+                                                        libName ^
+                                                          "__" ^
+                                                          fileNameNoExtNoDir suffix::".re" sourcePath ^
+                                                          ".cmi"
+                                                      )
+                                                  )
+                                                )
+                                            )
+                                          )
+                                          /* rel dir::(rel dir::buildDirRoot libName) (libName ^ ".cmi") |> Dep.path */
+                                        }
+                                      )
                                   )
+                                ]
                             )
                               *>>| (
                               fun () =>
