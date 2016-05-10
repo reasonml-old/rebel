@@ -123,7 +123,7 @@ let sortPathsTopologically dir::dir paths::paths =>
       *>>| (
       fun () => {
         let pathsString =
-          List.map (taplp 0 paths) f::(fun a => " -impl " ^ Path.basename a) |> String.concat sep::" ";
+          List.map (taplp 1 paths) f::(fun a => " -impl " ^ Path.basename a) |> String.concat sep::" ";
         bashf dir::dir "ocamldep -pp refmt -sort -one-line %s" (tap 1 pathsString)
       }
     )
@@ -176,7 +176,7 @@ let topLibName = "hi";
 
 topLibName;
 
-let topologicallySort firstNode::firstNode muhGraph => {
+let topologicallySort mainNode::mainNode muhGraph => {
   let rec topologicallySort' currNode muhGraph accum => {
     let nodeDeps =
       switch (List.find muhGraph f::(fun (n, _) => n == currNode)) {
@@ -189,8 +189,8 @@ let topologicallySort firstNode::firstNode muhGraph => {
     }
   };
   let accum = {contents: []};
-  topologicallySort' firstNode muhGraph accum;
-  List.rev accum.contents |> List.filter f::(fun m => m != firstNode)
+  topologicallySort' mainNode muhGraph accum;
+  List.rev accum.contents |> List.filter f::(fun m => m != mainNode)
 };
 
 topologicallySort;
@@ -201,6 +201,8 @@ let sortTransitiveThirdParties
     buildDirRoot::buildDirRoot => {
   ignore nodeModulesRoot;
   ignore buildDirRoot;
+  /* this is bad bc node_modules dir might be stale (have extra modules), and jenga doesn't clean stale dirs
+     correctly */
   Dep.subdirs dir::nodeModulesRoot *>>= (
     fun thirdPartyNodeModulesRoots => {
       let buildRoots = [
@@ -229,8 +231,7 @@ let sortTransitiveThirdParties
                 }
               );
           topologicallySort
-            /* TODO: don't hard-code this */
-            firstNode::"Hi"
+            mainNode::(String.capitalize topLibName)
             (List.zip_exn (List.map buildRoots f::(fun r => Path.basename r |> String.capitalize)) depsDeps)
         }
       )
@@ -240,7 +241,7 @@ let sortTransitiveThirdParties
 
 sortTransitiveThirdParties;
 
-let compileLib
+let compileLibScheme
     isTopLevelLib::isTopLevelLib=true
     srcDir::srcDir
     libName::libName
@@ -251,6 +252,7 @@ let compileLib
   let moduleAliasFilePath = rel dir::buildDir (libName ^ ".re");
   let moduleAliasCmoPath = rel dir::buildDir (libName ^ ".cmo");
   let moduleAliasCmiPath = rel dir::buildDir (libName ^ ".cmi");
+  let moduleAliasCmtPath = rel dir::buildDir (libName ^ ".cmt");
   Scheme.dep (
     Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>= (
       fun unsortedPaths => {
@@ -296,13 +298,13 @@ let compileLib
               ];
               let moduleAliasCompileRules = [
                 Rule.create
-                  targets::[moduleAliasCmoPath, tapp 1 moduleAliasCmiPath]
+                  targets::[moduleAliasCmoPath, tapp 1 moduleAliasCmiPath, moduleAliasCmtPath]
                   (
                     Dep.path moduleAliasFilePath *>>| (
                       fun () =>
                         bashf
                           dir::buildDir
-                          "ocamlc -pp refmt -g -no-alias-deps -w -49 -c -impl %s -o %s"
+                          "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -c -impl %s -o %s"
                           (Path.basename moduleAliasFilePath)
                           (Path.basename moduleAliasCmoPath)
                     )
@@ -311,7 +313,8 @@ let compileLib
                   dir::buildDir
                   [
                     Dep.path moduleAliasCmoPath,
-                    Dep.path moduleAliasCmiPath
+                    Dep.path moduleAliasCmiPath,
+                    Dep.path moduleAliasCmtPath
                     /* ...List.map filteredUnsortedPaths f::Dep.path */
                   ]
               ];
@@ -360,20 +363,22 @@ let compileLib
                       let outNameNoExtNoDir = libName ^ "__" ^ fileNameNoExtNoDir path suffix::".re";
                       let outCmi = rel dir::buildDir (outNameNoExtNoDir ^ ".cmi") |> tapp 1;
                       let outCmo = rel dir::buildDir (outNameNoExtNoDir ^ ".cmo");
+                      let outCmt = rel dir::buildDir (outNameNoExtNoDir ^ ".cmt");
                       [
                         Rule.create
-                          targets::[outCmi, outCmo]
+                          targets::[outCmi, outCmo, outCmt]
                           (
                             Dep.all_unit (
                               [
                                 Dep.path path,
                                 Dep.path moduleAliasCmiPath,
                                 Dep.path moduleAliasCmoPath,
+                                Dep.path moduleAliasCmtPath,
                                 Dep.path moduleAliasFilePath
                               ] @
                                 firstPartyModuleDeps @
                                 List.map
-                                  (tapl 0 thirdPartyModules)
+                                  (tapl 1 thirdPartyModules)
                                   f::(
                                     fun m => {
                                       let libName = String.uncapitalize m;
@@ -385,7 +390,7 @@ let compileLib
                               fun () =>
                                 bashf
                                   dir::buildDir
-                                  "ocamlc -pp refmt -g -open %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
+                                  "ocamlc -pp refmt -bin-annot -g -open %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
                                   (String.capitalize libName)
                                   (ts buildDir)
                                   (
@@ -403,7 +408,7 @@ let compileLib
                                   (Path.reach_from dir::buildDir path)
                             )
                           ),
-                        Rule.default dir::buildDir [Dep.path outCmi, Dep.path outCmo]
+                        Rule.default dir::buildDir [Dep.path outCmi, Dep.path outCmo, Dep.path outCmt]
                       ]
                     }
                   );
@@ -432,6 +437,7 @@ let compileLib
                           Rule.simple
                             targets::[rel dir::buildDir "lib.cma"]
                             deps::(
+                              /* TODO: what about cmi and cmt? */
                               [Dep.path moduleAliasCmoPath] @
                                 List.map cmos f::Dep.path @ List.map transitiveCmaPaths f::Dep.path
                             )
@@ -508,19 +514,101 @@ let compileLib
   )
 };
 
+let generateDotMerlinScheme
+    nodeModulesRoot::nodeModulesRoot
+    buildDirRoot::buildDirRoot
+    isTopLevelLib::isTopLevelLib
+    libName::libName
+    dir::dir
+    root::root => {
+  ignore nodeModulesRoot;
+  ignore buildDirRoot;
+  ignore isTopLevelLib;
+  ignore libName;
+  ignore dir;
+  ignore root;
+  let dotMerlinContent =
+    Printf.sprintf
+      {|%s
+S %s
+
+B %s
+
+FLG -w -30 -w -40 -open %s
+|}
+      (isTopLevelLib ? "src/*" : "")
+      (Path.reach_from dir::dir (rel dir::nodeModulesRoot "**/src"))
+      (Path.reach_from dir::dir (rel dir::buildDirRoot "**"))
+      (String.capitalize libName);
+  Scheme.rules [
+    Rule.simple
+      targets::[rel dir::dir ".merlin"]
+      deps::[]
+      action::(bashf dir::dir "echo %s > .merlin" (Shell.escape dotMerlinContent))
+  ]
+};
+
 let scheme dir::dir => {
   let nodeModulesRoot = Path.root_relative "node_modules";
   let buildDirRoot = Path.root_relative "_build";
-  let buildDirHi = Path.root_relative "_build/hi";
-  let libNameHi = "hi";
   ignore dir;
   ignore buildDirRoot;
   ignore nodeModulesRoot;
-  ignore buildDirHi;
-  ignore libNameHi;
-  print_endline @@ (ts dir ^ "<<<<<<<<<<<<<<<");
-  if (dir == root || dir == rel dir::root "src") {
-    Scheme.rules [Rule.default dir::dir [Dep.path (rel dir::buildDirHi "output.out")]]
+  /* print_endline @@ (ts dir ^ "<<<<<<<<<<<<<<<"); */
+  /* all the third party .merlin files, generated into their own node_modules/bla dir. We're making an
+     exception here to generate artifact into somewhere else than _build/. Maybe one day merlin will
+     support our dir structure */
+  if (dir == root) {
+    let dotMerlinScheme = Scheme.rules_dep (
+      Dep.subdirs dir::nodeModulesRoot *>>| (
+        fun thirdPartyNodeModulesRoots =>
+          List.map
+            thirdPartyNodeModulesRoots
+            f::(fun path => Rule.default dir::dir [Dep.path (rel dir::path ".merlin")])
+      )
+    );
+    let dotMerlinGenScheme =
+      generateDotMerlinScheme
+        buildDirRoot::buildDirRoot
+        isTopLevelLib::true
+        nodeModulesRoot::nodeModulesRoot
+        dir::dir
+        root::root
+        libName::topLibName;
+    Scheme.all [
+      dotMerlinGenScheme,
+      Scheme.rules [
+        Rule.default
+          dir::dir
+          [
+            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "output.out"),
+            Dep.path (rel dir::root ".merlin")
+          ]
+      ],
+      dotMerlinScheme
+    ]
+  } else if (
+    dir == rel dir::root "src"
+  ) {
+    let dotMerlinScheme = Scheme.rules_dep (
+      Dep.subdirs dir::nodeModulesRoot *>>| (
+        fun thirdPartyNodeModulesRoots =>
+          List.map
+            thirdPartyNodeModulesRoots
+            f::(fun path => Rule.default dir::dir [Dep.path (rel dir::path ".merlin")])
+      )
+    );
+    Scheme.all [
+      Scheme.rules [
+        Rule.default
+          dir::dir
+          [
+            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "output.out"),
+            Dep.path (rel dir::root ".merlin")
+          ]
+      ],
+      dotMerlinScheme
+    ]
   } else if (
     Path.is_descendant dir::(rel dir::root "_build") dir
   ) {
@@ -531,13 +619,24 @@ let scheme dir::dir => {
       } else {
         rel dir::(rel dir::nodeModulesRoot libName) "src"
       };
-    compileLib
+    compileLibScheme
       srcDir::srcDir
-      isTopLevelLib::(libName == libNameHi)
+      isTopLevelLib::(libName == topLibName)
       libName::libName
       buildDir::(rel dir::buildDirRoot libName)
       buildDirRoot::buildDirRoot
       nodeModulesRoot::nodeModulesRoot
+  } else if (
+    Path.dirname dir == nodeModulesRoot
+  ) {
+    let libName = Path.basename dir;
+    generateDotMerlinScheme
+      buildDirRoot::buildDirRoot
+      isTopLevelLib::false
+      nodeModulesRoot::nodeModulesRoot
+      dir::dir
+      root::root
+      libName::libName
   } else {
     Scheme.no_rules
   }
@@ -548,11 +647,11 @@ let env = Env.create
   /* artifacts::(
        fun dir::dir => {
          print_endline @@ (ts dir ^ "00000000000000000");
-         if (dir == buildDir || Path.is_descendant dir::dir buildDir) {
+         /* if (dir == buildDir || Path.is_descendant dir::dir buildDir) {
            Dep.glob_listing (Glob.create dir::buildDir "*.cmi")
-         } else {
+         } else { */
            Dep.return []
-         }
+         /* } */
        }
      ) */
   scheme;
