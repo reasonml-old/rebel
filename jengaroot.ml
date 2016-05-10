@@ -398,9 +398,8 @@ let scheme ~dir  =
   print_endline @@ ((ts dir) ^ "<<<<<<<<<<<<<<<");
   if (dir = root) || (dir = (rel ~dir:root "src"))
   then
-    Scheme.all
-      [Scheme.rules
-         [Rule.default ~dir [Dep.path (rel ~dir:buildDirHi "output.out")]]]
+    Scheme.rules
+      [Rule.default ~dir [Dep.path (rel ~dir:buildDirHi "output.out")]]
   else
     if Path.is_descendant ~dir:(rel ~dir:root "_build") dir
     then
