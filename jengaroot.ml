@@ -170,156 +170,128 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
    let moduleAliasCmiPath = rel ~dir:buildDir (libName ^ ".cmi") in
    let moduleAliasCmtPath = rel ~dir:buildDir (libName ^ ".cmt") in
    Scheme.dep
-     ((Dep.glob_change (Glob.create ~dir:srcDir "*.re")) *>>=
-        (fun ()  ->
-           (Dep.glob_listing (Glob.create ~dir:srcDir "*.re")) *>>=
-             (fun unsortedPaths  ->
-                let filteredUnsortedPaths = unsortedPaths in
-                (sortPathsTopologically ~dir:srcDir
-                   ~paths:filteredUnsortedPaths)
-                  *>>=
-                  (fun sortedPaths  ->
-                     (getDepModules ~dir:srcDir ~sourcePaths:sortedPaths)
-                       *>>|
-                       (fun (rawOutput,assocList)  ->
-                          let rawDepsOutputRules =
-                            [Rule.simple
-                               ~targets:[rel ~dir:buildDir "dependencies"]
-                               ~deps:(List.map filteredUnsortedPaths
-                                        ~f:Dep.path)
-                               ~action:(bashf ~dir:buildDir
-                                          "echo %s > dependencies"
-                                          (Shell.escape rawOutput));
-                            Rule.default ~dir:buildDir
-                              [Dep.path (rel ~dir:buildDir "dependencies")]] in
-                          let moduleAliasContent =
-                            (List.map filteredUnsortedPaths
-                               ~f:(fun path  ->
-                                     let name =
-                                       fileNameNoExtNoDir path ~suffix:".re" in
-                                     Printf.sprintf "let module %s = %s__%s;"
-                                       (String.capitalize name)
-                                       (String.capitalize libName) name))
-                              |> (String.concat ~sep:"\n") in
-                          let moduleAliasContentRules =
-                            [Rule.create ~targets:[moduleAliasFilePath]
-                               ((Dep.all_unit
-                                   (List.map filteredUnsortedPaths
-                                      ~f:Dep.path))
-                                  *>>|
-                                  (fun ()  ->
-                                     bashf ~dir:buildDir "echo %s > %s"
-                                       (Shell.escape moduleAliasContent)
-                                       (Path.basename moduleAliasFilePath)));
-                            Rule.default ~dir:buildDir
-                              [Dep.path moduleAliasFilePath]] in
-                          let moduleAliasCompileRules =
-                            [Rule.create
-                               ~targets:[moduleAliasCmoPath;
-                                        tapp 1 moduleAliasCmiPath;
-                                        moduleAliasCmtPath]
-                               ((Dep.path moduleAliasFilePath) *>>|
-                                  (fun ()  ->
-                                     bashf ~dir:buildDir
-                                       "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -c -impl %s -o %s"
-                                       (Path.basename moduleAliasFilePath)
-                                       (Path.basename moduleAliasCmoPath)));
-                            Rule.default ~dir:buildDir
-                              [Dep.path moduleAliasCmoPath;
-                              Dep.path moduleAliasCmiPath;
-                              Dep.path moduleAliasCmtPath]] in
-                          let sourcesCompileRules =
-                            List.concat_map sortedPaths
-                              ~f:(fun path  ->
-                                    let modules =
-                                      match List.Assoc.find assocList path
-                                      with
-                                      | None  ->
-                                          failwith ("lookup: " ^ (ts path))
-                                      | ((Some (modules)))
-                                          -> modules in
-                                    let firstPartyModules =
-                                      List.filter (tapl 1 modules)
-                                        ~f:(fun m  ->
-                                              List.exists sortedPaths
-                                                ~f:(fun path  ->
-                                                      ((fileNameNoExtNoDir
-                                                          ~suffix:".re" path)
-                                                         |> String.capitalize)
-                                                        = m)) in
-                                    let thirdPartyModules =
-                                      List.filter modules
-                                        ~f:(fun m  ->
-                                              not
-                                                (List.exists sortedPaths
-                                                   ~f:(fun path  ->
-                                                         ((fileNameNoExtNoDir
-                                                             ~suffix:".re"
-                                                             path)
-                                                            |>
-                                                            String.capitalize)
-                                                           = m))) in
-                                    let firstPartyModuleDeps =
-                                      List.map (tapl 1 firstPartyModules)
-                                        ~f:(fun m  ->
-                                              Dep.path
-                                                (rel ~dir:buildDir
-                                                   (libName ^
-                                                      ("__" ^
-                                                         ((String.uncapitalize
-                                                             m)
-                                                            ^ ".cmi"))))) in
-                                    let outNameNoExtNoDir =
-                                      libName ^
-                                        ("__" ^
-                                           (fileNameNoExtNoDir path
-                                              ~suffix:".re")) in
-                                    let outCmi =
-                                      (rel ~dir:buildDir
-                                         (outNameNoExtNoDir ^ ".cmi"))
-                                        |> (tapp 1) in
-                                    let outCmo =
-                                      rel ~dir:buildDir
-                                        (outNameNoExtNoDir ^ ".cmo") in
-                                    let outCmt =
-                                      rel ~dir:buildDir
-                                        (outNameNoExtNoDir ^ ".cmt") in
-                                    [Rule.create
-                                       ~targets:[outCmi; outCmo; outCmt]
-                                       ((Dep.all_unit
-                                           ([Dep.path path;
-                                            Dep.path moduleAliasCmiPath;
-                                            Dep.path moduleAliasCmoPath;
-                                            Dep.path moduleAliasCmtPath;
-                                            Dep.path moduleAliasFilePath] @
-                                              (firstPartyModuleDeps @
-                                                 [Dep.all_unit
-                                                    (List.map
-                                                       (tapl 1
-                                                          thirdPartyModules)
-                                                       ~f:(fun m  ->
-                                                             let libName =
-                                                               String.uncapitalize
-                                                                 m in
-                                                             (Dep.glob_listing
-                                                                (Glob.create
-                                                                   ~dir:(
-                                                                   rel
+     ((Dep.glob_listing (Glob.create ~dir:srcDir "*.re")) *>>=
+        (fun unsortedPaths  ->
+           let filteredUnsortedPaths = unsortedPaths in
+           (sortPathsTopologically ~dir:srcDir ~paths:filteredUnsortedPaths)
+             *>>=
+             (fun sortedPaths  ->
+                (getDepModules ~dir:srcDir ~sourcePaths:sortedPaths) *>>|
+                  (fun (rawOutput,assocList)  ->
+                     let rawDepsOutputRules =
+                       [Rule.simple
+                          ~targets:[rel ~dir:buildDir "dependencies"]
+                          ~deps:(List.map filteredUnsortedPaths ~f:Dep.path)
+                          ~action:(bashf ~dir:buildDir
+                                     "echo %s > dependencies"
+                                     (Shell.escape rawOutput))] in
+                     let moduleAliasContent =
+                       (List.map filteredUnsortedPaths
+                          ~f:(fun path  ->
+                                let name =
+                                  fileNameNoExtNoDir path ~suffix:".re" in
+                                Printf.sprintf "let module %s = %s__%s;"
+                                  (String.capitalize name)
+                                  (String.capitalize libName) name))
+                         |> (String.concat ~sep:"\n") in
+                     let moduleAliasContentRules =
+                       [Rule.create ~targets:[moduleAliasFilePath]
+                          (Dep.return
+                             (bashf ~dir:buildDir "echo %s > %s"
+                                (Shell.escape moduleAliasContent)
+                                (Path.basename moduleAliasFilePath)))] in
+                     let moduleAliasCompileRules =
+                       [Rule.create
+                          ~targets:[moduleAliasCmoPath;
+                                   tapp 1 moduleAliasCmiPath;
+                                   moduleAliasCmtPath]
+                          ((Dep.path moduleAliasFilePath) *>>|
+                             (fun ()  ->
+                                bashf ~dir:buildDir
+                                  "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -c -impl %s -o %s"
+                                  (Path.basename moduleAliasFilePath)
+                                  (Path.basename moduleAliasCmoPath)))] in
+                     let sourcesCompileRules =
+                       List.concat_map sortedPaths
+                         ~f:(fun path  ->
+                               let modules =
+                                 match List.Assoc.find assocList path with
+                                 | None  -> failwith ("lookup: " ^ (ts path))
+                                 | ((Some (modules))) ->
+                                     modules in
+                               let firstPartyModules =
+                                 List.filter (tapl 1 modules)
+                                   ~f:(fun m  ->
+                                         List.exists sortedPaths
+                                           ~f:(fun path  ->
+                                                 ((fileNameNoExtNoDir
+                                                     ~suffix:".re" path)
+                                                    |> String.capitalize)
+                                                   = m)) in
+                               let thirdPartyModules =
+                                 List.filter modules
+                                   ~f:(fun m  ->
+                                         not
+                                           (List.exists sortedPaths
+                                              ~f:(fun path  ->
+                                                    ((fileNameNoExtNoDir
+                                                        ~suffix:".re" path)
+                                                       |> String.capitalize)
+                                                      = m))) in
+                               let firstPartyModuleDeps =
+                                 List.map (tapl 1 firstPartyModules)
+                                   ~f:(fun m  ->
+                                         Dep.path
+                                           (rel ~dir:buildDir
+                                              (libName ^
+                                                 ("__" ^
+                                                    ((String.uncapitalize m)
+                                                       ^ ".cmi"))))) in
+                               let outNameNoExtNoDir =
+                                 libName ^
+                                   ("__" ^
+                                      (fileNameNoExtNoDir path ~suffix:".re")) in
+                               let outCmi =
+                                 (rel ~dir:buildDir
+                                    (outNameNoExtNoDir ^ ".cmi"))
+                                   |> (tapp 1) in
+                               let outCmo =
+                                 rel ~dir:buildDir
+                                   (outNameNoExtNoDir ^ ".cmo") in
+                               let outCmt =
+                                 rel ~dir:buildDir
+                                   (outNameNoExtNoDir ^ ".cmt") in
+                               [Rule.create ~targets:[outCmi; outCmo; outCmt]
+                                  ((Dep.all_unit
+                                      ([Dep.path path;
+                                       Dep.path moduleAliasCmiPath;
+                                       Dep.path moduleAliasCmoPath;
+                                       Dep.path moduleAliasCmtPath;
+                                       Dep.path moduleAliasFilePath] @
+                                         (firstPartyModuleDeps @
+                                            [Dep.all_unit
+                                               (List.map
+                                                  (tapl 1 thirdPartyModules)
+                                                  ~f:(fun m  ->
+                                                        let libName =
+                                                          String.uncapitalize
+                                                            m in
+                                                        (Dep.glob_listing
+                                                           (Glob.create
+                                                              ~dir:(rel
                                                                     ~dir:(
                                                                     rel
                                                                     ~dir:nodeModulesRoot
                                                                     libName)
                                                                     "src")
-                                                                   "*.re"))
-                                                               *>>=
-                                                               (fun sources 
-                                                                  ->
-                                                                  Dep.all_unit
-                                                                    (
-                                                                    List.map
-                                                                    sources
-                                                                    ~f:(
-                                                                    fun
+                                                              "*.re"))
+                                                          *>>=
+                                                          (fun sources  ->
+                                                             Dep.all_unit
+                                                               (List.map
+                                                                  sources
+                                                                  ~f:(
+                                                                  fun
                                                                     sourcePath
                                                                      ->
                                                                     Dep.path
@@ -335,137 +307,109 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                                     ~suffix:".re"
                                                                     sourcePath)
                                                                     ^ ".cmi")))))))))])))
-                                          *>>|
-                                          (fun ()  ->
-                                             bashf ~dir:buildDir
-                                               "ocamlc -pp refmt -bin-annot -g -open %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
-                                               (String.capitalize libName)
-                                               (ts buildDir)
-                                               ((List.map thirdPartyModules
-                                                   ~f:(fun m  ->
-                                                         "-I " ^
-                                                           (((String.uncapitalize
-                                                                m)
-                                                               |>
-                                                               (rel
-                                                                  ~dir:buildDirRoot))
-                                                              |>
-                                                              (Path.reach_from
-                                                                 ~dir:buildDir))))
-                                                  |> (String.concat ~sep:" "))
-                                               outNameNoExtNoDir
-                                               (Path.reach_from ~dir:buildDir
-                                                  path)));
-                                    Rule.default ~dir:buildDir
-                                      [Dep.path outCmi;
-                                      Dep.path outCmo;
-                                      Dep.path outCmt]]) in
-                          let cmos =
-                            List.map sortedPaths
-                              ~f:(fun path  ->
-                                    let outNameNoExtNoDir =
-                                      libName ^
-                                        ("__" ^
-                                           (fileNameNoExtNoDir path
-                                              ~suffix:".re")) in
-                                    rel ~dir:buildDir
-                                      (outNameNoExtNoDir ^ ".cmo")) in
-                          let cmaPath = rel ~dir:buildDir "lib.cma" in
-                          let cmaCompileRulesScheme =
-                            if isTopLevelLib
-                            then
-                              Scheme.dep @@
-                                ((sortTransitiveThirdParties
-                                    ~topLibName:libName ~nodeModulesRoot
-                                    ~buildDirRoot)
-                                   *>>|
-                                   (fun thirdPartyTransitiveFuckingModules 
-                                      ->
-                                      let transitiveCmaPaths =
-                                        List.map
-                                          thirdPartyTransitiveFuckingModules
-                                          ~f:(fun t  ->
-                                                rel
-                                                  ~dir:(rel ~dir:buildDirRoot
-                                                          (String.uncapitalize
-                                                             t)) "lib.cma") in
-                                      Scheme.rules
-                                        [Rule.simple
-                                           ~targets:[rel ~dir:buildDir
-                                                       "lib.cma"]
-                                           ~deps:([Dep.path
-                                                     moduleAliasCmoPath]
-                                                    @
-                                                    ((List.map cmos
-                                                        ~f:Dep.path)
-                                                       @
-                                                       (List.map
-                                                          transitiveCmaPaths
-                                                          ~f:Dep.path)))
-                                           ~action:(bashf ~dir:buildDir
-                                                      "ocamlc -g -open %s -a -o %s %s %s %s"
-                                                      (String.capitalize
-                                                         libName)
-                                                      (Path.basename cmaPath)
-                                                      (((taplp 1
-                                                           transitiveCmaPaths)
+                                     *>>|
+                                     (fun ()  ->
+                                        bashf ~dir:buildDir
+                                          "ocamlc -pp refmt -bin-annot -g -open %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
+                                          (String.capitalize libName)
+                                          (ts buildDir)
+                                          ((List.map thirdPartyModules
+                                              ~f:(fun m  ->
+                                                    "-I " ^
+                                                      (((String.uncapitalize
+                                                           m)
                                                           |>
-                                                          (List.map
-                                                             ~f:(Path.reach_from
-                                                                   ~dir:buildDir)))
+                                                          (rel
+                                                             ~dir:buildDirRoot))
                                                          |>
-                                                         (String.concat
-                                                            ~sep:" "))
-                                                      (Path.basename
-                                                         moduleAliasCmoPath)
-                                                      ((List.map cmos
-                                                          ~f:Path.basename)
-                                                         |>
-                                                         (String.concat
-                                                            ~sep:" ")));
-                                        Rule.default ~dir:buildDir
-                                          [Dep.path cmaPath]]))
-                            else
-                              Scheme.rules
-                                [Rule.simple
-                                   ~targets:[rel ~dir:buildDir "lib.cma"]
-                                   ~deps:((Dep.path moduleAliasCmoPath) ::
-                                   (List.map cmos ~f:Dep.path))
-                                   ~action:(bashf ~dir:buildDir
-                                              "ocamlc -g -open %s -a -o %s %s %s"
-                                              (String.capitalize libName)
-                                              (Path.basename cmaPath)
-                                              (Path.basename
-                                                 moduleAliasCmoPath)
-                                              ((List.map cmos
-                                                  ~f:Path.basename)
-                                                 |> (String.concat ~sep:" ")));
-                                Rule.default ~dir:buildDir [Dep.path cmaPath]] in
-                          let finalOutputRules =
-                            if isTopLevelLib
-                            then
-                              let topOutputPath =
-                                rel ~dir:buildDir "output.out" in
-                              [Rule.simple ~targets:[topOutputPath]
-                                 ~deps:[Dep.path cmaPath;
-                                       Dep.path
-                                         (rel ~dir:buildDir "hi__main.cmo")]
-                                 ~action:(bashf ~dir:buildDir
-                                            "ocamlc -g -o %s %s %s"
-                                            (Path.basename topOutputPath)
-                                            (Path.basename cmaPath)
-                                            "hi__main.cmo");
-                              Rule.default ~dir:buildDir
-                                [Dep.path topOutputPath]]
-                            else [] in
-                          Scheme.all
-                            [Scheme.rules
-                               (rawDepsOutputRules @
-                                  (moduleAliasContentRules @
-                                     (moduleAliasCompileRules @
-                                        (sourcesCompileRules @
-                                           finalOutputRules))));
-                            cmaCompileRulesScheme]))))))
+                                                         (Path.reach_from
+                                                            ~dir:buildDir))))
+                                             |> (String.concat ~sep:" "))
+                                          outNameNoExtNoDir
+                                          (Path.reach_from ~dir:buildDir path)))]) in
+                     let cmos =
+                       List.map sortedPaths
+                         ~f:(fun path  ->
+                               let outNameNoExtNoDir =
+                                 libName ^
+                                   ("__" ^
+                                      (fileNameNoExtNoDir path ~suffix:".re")) in
+                               rel ~dir:buildDir (outNameNoExtNoDir ^ ".cmo")) in
+                     let cmaPath = rel ~dir:buildDir "lib.cma" in
+                     let cmaCompileRulesScheme =
+                       if isTopLevelLib
+                       then
+                         Scheme.dep @@
+                           ((sortTransitiveThirdParties ~topLibName:libName
+                               ~nodeModulesRoot ~buildDirRoot)
+                              *>>|
+                              (fun thirdPartyTransitiveFuckingModules  ->
+                                 let transitiveCmaPaths =
+                                   List.map
+                                     thirdPartyTransitiveFuckingModules
+                                     ~f:(fun t  ->
+                                           rel
+                                             ~dir:(rel ~dir:buildDirRoot
+                                                     (String.uncapitalize t))
+                                             "lib.cma") in
+                                 Scheme.rules
+                                   [Rule.simple
+                                      ~targets:[rel ~dir:buildDir "lib.cma"]
+                                      ~deps:([Dep.path moduleAliasCmoPath] @
+                                               ((List.map cmos ~f:Dep.path) @
+                                                  (List.map
+                                                     transitiveCmaPaths
+                                                     ~f:Dep.path)))
+                                      ~action:(bashf ~dir:buildDir
+                                                 "ocamlc -g -open %s -a -o %s %s %s %s"
+                                                 (String.capitalize libName)
+                                                 (Path.basename cmaPath)
+                                                 (((taplp 1
+                                                      transitiveCmaPaths)
+                                                     |>
+                                                     (List.map
+                                                        ~f:(Path.reach_from
+                                                              ~dir:buildDir)))
+                                                    |>
+                                                    (String.concat ~sep:" "))
+                                                 (Path.basename
+                                                    moduleAliasCmoPath)
+                                                 ((List.map cmos
+                                                     ~f:Path.basename)
+                                                    |>
+                                                    (String.concat ~sep:" ")))]))
+                       else
+                         Scheme.rules
+                           [Rule.simple
+                              ~targets:[rel ~dir:buildDir "lib.cma"]
+                              ~deps:((Dep.path moduleAliasCmoPath) ::
+                              (List.map cmos ~f:Dep.path))
+                              ~action:(bashf ~dir:buildDir
+                                         "ocamlc -g -open %s -a -o %s %s %s"
+                                         (String.capitalize libName)
+                                         (Path.basename cmaPath)
+                                         (Path.basename moduleAliasCmoPath)
+                                         ((List.map cmos ~f:Path.basename) |>
+                                            (String.concat ~sep:" ")))] in
+                     let finalOutputRules =
+                       if isTopLevelLib
+                       then
+                         let topOutputPath = rel ~dir:buildDir "output.out" in
+                         [Rule.simple ~targets:[topOutputPath]
+                            ~deps:[Dep.path cmaPath;
+                                  Dep.path (rel ~dir:buildDir "hi__main.cmo")]
+                            ~action:(bashf ~dir:buildDir
+                                       "ocamlc -g -o %s %s %s"
+                                       (Path.basename topOutputPath)
+                                       (Path.basename cmaPath) "hi__main.cmo")]
+                       else [] in
+                     Scheme.all
+                       [Scheme.rules
+                          (rawDepsOutputRules @
+                             (moduleAliasContentRules @
+                                (moduleAliasCompileRules @
+                                   (sourcesCompileRules @ finalOutputRules))));
+                       cmaCompileRulesScheme])))))
 let generateDotMerlinScheme ~nodeModulesRoot  ~buildDirRoot  ~isTopLevelLib 
   ~libName  ~dir  ~root  =
   ignore nodeModulesRoot;
