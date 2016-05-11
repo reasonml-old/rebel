@@ -621,28 +621,6 @@ let scheme dir::dir => {
       dotMerlinScheme
     ]
   } else if (
-    dir == rel dir::root "src"
-  ) {
-    let dotMerlinScheme = Scheme.rules_dep (
-      Dep.subdirs dir::nodeModulesRoot *>>| (
-        fun thirdPartyNodeModulesRoots =>
-          List.map
-            thirdPartyNodeModulesRoots
-            f::(fun path => Rule.default dir::dir [Dep.path (rel dir::path ".merlin")])
-      )
-    );
-    Scheme.all [
-      Scheme.rules [
-        Rule.default
-          dir::dir
-          [
-            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "output.out"),
-            Dep.path (rel dir::root ".merlin")
-          ]
-      ],
-      dotMerlinScheme
-    ]
-  } else if (
     Path.is_descendant dir::(rel dir::root "_build") dir
   ) {
     let libName = Path.basename dir;
