@@ -271,8 +271,7 @@ let compileLibScheme
                 Rule.simple
                   targets::[rel dir::buildDir "dependencies"]
                   deps::(List.map filteredUnsortedPaths f::Dep.path)
-                  action::(bashf dir::buildDir "echo %s > dependencies" (Shell.escape rawOutput)),
-                Rule.default dir::buildDir [Dep.path (rel dir::buildDir "dependencies")]
+                  action::(bashf dir::buildDir "echo %s > dependencies" (Shell.escape rawOutput))
               ];
               /* module alias file generation */
               let moduleAliasContent =
@@ -290,18 +289,16 @@ let compileLibScheme
                 Rule.create
                   targets::[moduleAliasFilePath]
                   (
-                    Dep.all_unit (List.map filteredUnsortedPaths f::Dep.path) *>>| (
-                      fun () =>
+                    /* Dep.all_unit (List.map filteredUnsortedPaths f::Dep.path) *>>| ( */
+                    Dep.return (
+                      /* fun () => */
                         bashf
                           dir::buildDir
                           "echo %s > %s"
                           (Shell.escape moduleAliasContent)
                           (Path.basename moduleAliasFilePath)
                     )
-                  ),
-                Rule.default
-                  dir::buildDir
-                  [Dep.path moduleAliasFilePath /* , ...List.map filteredUnsortedPaths f::Dep.path */]
+                  )
               ];
               let moduleAliasCompileRules = [
                 Rule.create
@@ -315,15 +312,7 @@ let compileLibScheme
                           (Path.basename moduleAliasFilePath)
                           (Path.basename moduleAliasCmoPath)
                     )
-                  ),
-                Rule.default
-                  dir::buildDir
-                  [
-                    Dep.path moduleAliasCmoPath,
-                    Dep.path moduleAliasCmiPath,
-                    Dep.path moduleAliasCmtPath
-                    /* ...List.map filteredUnsortedPaths f::Dep.path */
-                  ]
+                  )
               ];
               let sourcesCompileRules =
                 List.concat_map
@@ -440,8 +429,7 @@ let compileLibScheme
                                   outNameNoExtNoDir
                                   (Path.reach_from dir::buildDir path)
                             )
-                          ),
-                        Rule.default dir::buildDir [Dep.path outCmi, Dep.path outCmo, Dep.path outCmt]
+                          )
                       ]
                     }
                   );
@@ -486,8 +474,7 @@ let compileLibScheme
                                 )
                                 (Path.basename moduleAliasCmoPath)
                                 (List.map cmos f::Path.basename |> String.concat sep::" ")
-                            ),
-                          Rule.default dir::buildDir [Dep.path cmaPath]
+                            )
                         ]
                       }
                     )
@@ -504,8 +491,7 @@ let compileLibScheme
                           (Path.basename cmaPath)
                           (Path.basename moduleAliasCmoPath)
                           (List.map cmos f::Path.basename |> String.concat sep::" ")
-                      ),
-                    Rule.default dir::buildDir [Dep.path cmaPath]
+                      )
                   ]
                 };
               let finalOutputRules =
@@ -523,8 +509,7 @@ let compileLibScheme
                           (Path.basename topOutputPath)
                           (Path.basename cmaPath)
                           "hi__main.cmo"
-                      ),
-                    Rule.default dir::buildDir [Dep.path topOutputPath]
+                      )
                   ]
                 } else {
                   []
