@@ -179,7 +179,7 @@ let getDepModules dir::dir sourcePaths::sourcePaths =>
 
 getDepModules;
 
-let topLibName = "hi";
+let topLibName = "top";
 
 topLibName;
 
@@ -289,14 +289,12 @@ let compileLibScheme
                 Rule.create
                   targets::[moduleAliasFilePath]
                   (
-                    /* Dep.all_unit (List.map filteredUnsortedPaths f::Dep.path) *>>| ( */
                     Dep.return (
-                      /* fun () => */
-                        bashf
-                          dir::buildDir
-                          "echo %s > %s"
-                          (Shell.escape moduleAliasContent)
-                          (Path.basename moduleAliasFilePath)
+                      bashf
+                        dir::buildDir
+                        "echo %s > %s"
+                        (Shell.escape moduleAliasContent)
+                        (Path.basename moduleAliasFilePath)
                     )
                   )
               ];
@@ -402,7 +400,6 @@ let compileLibScheme
                                                 )
                                             )
                                           )
-                                          /* rel dir::(rel dir::buildDirRoot libName) (libName ^ ".cmi") |> Dep.path */
                                         }
                                       )
                                   )
@@ -501,14 +498,14 @@ let compileLibScheme
                     /* ocamlc -g -o _build/hi/entry.out _build/hi/lib.cma _build/hi/hi__main.cmo */
                     Rule.simple
                       targets::[topOutputPath]
-                      deps::[Dep.path cmaPath, Dep.path (rel dir::buildDir "hi__main.cmo")]
+                      deps::[Dep.path cmaPath, Dep.path (rel dir::buildDir (topLibName ^ "__main.cmo"))]
                       action::(
                         bashf
                           dir::buildDir
                           "ocamlc -g -o %s %s %s"
                           (Path.basename topOutputPath)
                           (Path.basename cmaPath)
-                          "hi__main.cmo"
+                          (topLibName ^ "__main.cmo")
                       )
                   ]
                 } else {

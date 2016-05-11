@@ -3,5 +3,5 @@ S ./node_modules/**/src
 
 B ./_build/**
 
-FLG -w -30 -w -40 -open Hi
+FLG -w -30 -w -40 -open Top
 

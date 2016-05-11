@@ -107,7 +107,7 @@ let getDepModules ~dir  ~sourcePaths  =
                 |> (tap 1)))))
     *>>| (fun string  -> (string, (parseOcamlDepModulesOutput ~dir string)))
 let _ = getDepModules
-let topLibName = "hi"
+let topLibName = "top"
 let _ = topLibName
 let topologicallySort ~mainNode  muhGraph =
   let rec topologicallySort' currNode muhGraph accum =
@@ -397,11 +397,14 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                          let topOutputPath = rel ~dir:buildDir "output.out" in
                          [Rule.simple ~targets:[topOutputPath]
                             ~deps:[Dep.path cmaPath;
-                                  Dep.path (rel ~dir:buildDir "hi__main.cmo")]
+                                  Dep.path
+                                    (rel ~dir:buildDir
+                                       (topLibName ^ "__main.cmo"))]
                             ~action:(bashf ~dir:buildDir
                                        "ocamlc -g -o %s %s %s"
                                        (Path.basename topOutputPath)
-                                       (Path.basename cmaPath) "hi__main.cmo")]
+                                       (Path.basename cmaPath)
+                                       (topLibName ^ "__main.cmo"))]
                        else [] in
                      Scheme.all
                        [Scheme.rules
