@@ -182,24 +182,23 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                        [Rule.simple
                           ~targets:[rel ~dir:buildDir "dependencies"]
                           ~deps:(List.map filteredUnsortedPaths ~f:Dep.path)
-                          ~action:(bashf ~dir:buildDir
-                                     "echo %s > dependencies"
-                                     (Shell.escape rawOutput))] in
+                          ~action:(Action.save rawOutput
+                                     ~target:(rel ~dir:buildDir
+                                                "dependencies"))] in
                      let moduleAliasContent =
                        (List.map filteredUnsortedPaths
                           ~f:(fun path  ->
                                 let name =
                                   fileNameNoExtNoDir path ~suffix:".re" in
-                                Printf.sprintf "let module %s = %s__%s;"
+                                Printf.sprintf "let module %s = %s__%s;\n"
                                   (String.capitalize name)
                                   (String.capitalize libName) name))
-                         |> (String.concat ~sep:"\n") in
+                         |> (String.concat ~sep:"") in
                      let moduleAliasContentRules =
                        [Rule.create ~targets:[moduleAliasFilePath]
                           (Dep.return
-                             (bashf ~dir:buildDir "echo %s > %s"
-                                (Shell.escape moduleAliasContent)
-                                (Path.basename moduleAliasFilePath)))] in
+                             (Action.save moduleAliasContent
+                                ~target:moduleAliasFilePath))] in
                      let moduleAliasCompileRules =
                        [Rule.create
                           ~targets:[moduleAliasCmoPath;
@@ -435,8 +434,7 @@ FLG -w -30 -w -40 -open %s
        (String.capitalize libName) in
    Scheme.rules
      [Rule.simple ~targets:[rel ~dir ".merlin"] ~deps:[]
-        ~action:(bashf ~dir "echo %s > .merlin"
-                   (Shell.escape dotMerlinContent))])
+        ~action:(Action.save dotMerlinContent ~target:(rel ~dir ".merlin"))])
 let scheme ~dir  =
   let nodeModulesRoot = Path.root_relative "node_modules" in
   let buildDirRoot = Path.root_relative "_build" in

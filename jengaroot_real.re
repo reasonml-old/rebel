@@ -271,7 +271,7 @@ let compileLibScheme
                 Rule.simple
                   targets::[rel dir::buildDir "dependencies"]
                   deps::(List.map filteredUnsortedPaths f::Dep.path)
-                  action::(bashf dir::buildDir "echo %s > dependencies" (Shell.escape rawOutput))
+                  action::(Action.save rawOutput target::(rel dir::buildDir "dependencies"))
               ];
               /* module alias file generation */
               let moduleAliasContent =
@@ -281,22 +281,14 @@ let compileLibScheme
                     fun path => {
                       let name = fileNameNoExtNoDir path suffix::".re";
                       Printf.sprintf
-                        "let module %s = %s__%s;" (String.capitalize name) (String.capitalize libName) name
+                        "let module %s = %s__%s;\n" (String.capitalize name) (String.capitalize libName) name
                     }
                   ) |>
-                  String.concat sep::"\n";
+                  String.concat sep::"";
               let moduleAliasContentRules = [
                 Rule.create
                   targets::[moduleAliasFilePath]
-                  (
-                    Dep.return (
-                      bashf
-                        dir::buildDir
-                        "echo %s > %s"
-                        (Shell.escape moduleAliasContent)
-                        (Path.basename moduleAliasFilePath)
-                    )
-                  )
+                  (Dep.return (Action.save moduleAliasContent target::moduleAliasFilePath))
               ];
               let moduleAliasCompileRules = [
                 Rule.create
@@ -559,7 +551,7 @@ FLG -w -30 -w -40 -open %s
     Rule.simple
       targets::[rel dir::dir ".merlin"]
       deps::[]
-      action::(bashf dir::dir "echo %s > .merlin" (Shell.escape dotMerlinContent))
+      action::(Action.save dotMerlinContent target::(rel dir::dir ".merlin"))
   ]
 };
 
