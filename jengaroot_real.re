@@ -263,20 +263,20 @@ let compileLibScheme
   Scheme.dep (
     Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>= (
       fun unsortedPaths => {
-        let filteredUnsortedPaths = unsortedPaths;
-        sortPathsTopologically dir::srcDir paths::filteredUnsortedPaths *>>= (
-          fun sortedPaths => getDepModules dir::srcDir sourcePaths::sortedPaths *>>| (
+        ignore 1;
+        sortPathsTopologically dir::srcDir paths::unsortedPaths *>>= (
+          fun sortedPaths => getDepModules dir::srcDir sourcePaths::unsortedPaths *>>| (
             fun (rawOutput, assocList) => {
               let rawDepsOutputRules = [
                 Rule.simple
                   targets::[rel dir::buildDir "dependencies"]
-                  deps::(List.map filteredUnsortedPaths f::Dep.path)
+                  deps::(List.map unsortedPaths f::Dep.path)
                   action::(Action.save rawOutput target::(rel dir::buildDir "dependencies"))
               ];
               /* module alias file generation */
               let moduleAliasContent =
                 List.map
-                  filteredUnsortedPaths
+                  unsortedPaths
                   f::(
                     fun path => {
                       let name = fileNameNoExtNoDir path suffix::".re";
@@ -305,8 +305,8 @@ let compileLibScheme
                   )
               ];
               let sourcesCompileRules =
-                List.concat_map
-                  sortedPaths
+                List.map
+                  unsortedPaths
                   f::(
                     fun path => {
                       let modules =
@@ -320,7 +320,7 @@ let compileLibScheme
                           f::(
                             fun m =>
                               List.exists
-                                sortedPaths
+                                unsortedPaths
                                 f::(
                                   fun path => (fileNameNoExtNoDir suffix::".re" path |> String.capitalize) == m
                                 )
@@ -331,7 +331,7 @@ let compileLibScheme
                           f::(
                             fun m => not (
                               List.exists
-                                sortedPaths
+                                unsortedPaths
                                 f::(
                                   fun path => (fileNameNoExtNoDir suffix::".re" path |> String.capitalize) == m
                                 )
@@ -350,80 +350,79 @@ let compileLibScheme
                       let outCmi = rel dir::buildDir (outNameNoExtNoDir ^ ".cmi") |> tapp 1;
                       let outCmo = rel dir::buildDir (outNameNoExtNoDir ^ ".cmo");
                       let outCmt = rel dir::buildDir (outNameNoExtNoDir ^ ".cmt");
-                      [
-                        Rule.create
-                          targets::[outCmi, outCmo, outCmt]
-                          (
-                            Dep.all_unit (
+                      Rule.create
+                        targets::[outCmi, outCmo, outCmt]
+                        (
+                          Dep.all_unit (
+                            [
+                              Dep.path path,
+                              Dep.path moduleAliasCmiPath,
+                              Dep.path moduleAliasCmoPath,
+                              Dep.path moduleAliasCmtPath,
+                              Dep.path moduleAliasFilePath
+                            ] @
+                              firstPartyModuleDeps @
                               [
-                                Dep.path path,
-                                Dep.path moduleAliasCmiPath,
-                                Dep.path moduleAliasCmoPath,
-                                Dep.path moduleAliasCmtPath,
-                                Dep.path moduleAliasFilePath
-                              ] @
-                                firstPartyModuleDeps @
-                                [
-                                  Dep.all_unit (
-                                    List.map
-                                      (tapl 1 thirdPartyModules)
-                                      f::(
-                                        fun m => {
-                                          let libName = String.uncapitalize m;
-                                          Dep.glob_listing (
-                                            Glob.create
-                                              dir::(rel dir::(rel dir::nodeModulesRoot libName) "src") "*.re"
-                                          )
-                                            *>>= (
-                                            fun sources => Dep.all_unit (
-                                              List.map
-                                                sources
-                                                f::(
-                                                  fun sourcePath => Dep.path (
-                                                    rel
-                                                      dir::(rel dir::buildDirRoot libName)
-                                                      (
-                                                        libName ^
-                                                          "__" ^
-                                                          fileNameNoExtNoDir suffix::".re" sourcePath ^
-                                                          ".cmi"
-                                                      )
-                                                  )
-                                                )
-                                            )
-                                          )
-                                        }
-                                      )
-                                  )
-                                ]
-                            )
-                              *>>| (
-                              fun () =>
-                                bashf
-                                  dir::buildDir
-                                  "ocamlc -pp refmt -bin-annot -g -open %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
-                                  (String.capitalize libName)
-                                  (ts buildDir)
-                                  (
-                                    List.map
-                                      thirdPartyModules
-                                      f::(
-                                        fun m => "-I " ^ (
-                                          String.uncapitalize m |>
-                                            rel dir::buildDirRoot |> Path.reach_from dir::buildDir
+                                Dep.all_unit (
+                                  List.map
+                                    (tapl 1 thirdPartyModules)
+                                    f::(
+                                      fun m => {
+                                        let libName = String.uncapitalize m;
+                                        Dep.glob_listing (
+                                          Glob.create
+                                            dir::(rel dir::(rel dir::nodeModulesRoot libName) "src") "*.re"
                                         )
-                                      ) |>
-                                      String.concat sep::" "
-                                  )
-                                  outNameNoExtNoDir
-                                  (Path.reach_from dir::buildDir path)
-                            )
+                                          *>>= (
+                                          fun sources => Dep.all_unit (
+                                            List.map
+                                              sources
+                                              f::(
+                                                fun sourcePath => Dep.path (
+                                                  rel
+                                                    dir::(rel dir::buildDirRoot libName)
+                                                    (
+                                                      libName ^
+                                                        "__" ^
+                                                        fileNameNoExtNoDir suffix::".re" sourcePath ^
+                                                        ".cmi"
+                                                    )
+                                                )
+                                              )
+                                          )
+                                        )
+                                      }
+                                    )
+                                )
+                              ]
                           )
-                      ]
+                            *>>| (
+                            fun () =>
+                              bashf
+                                dir::buildDir
+                                "ocamlc -pp refmt -bin-annot -g -open %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
+                                (String.capitalize libName)
+                                (ts buildDir)
+                                (
+                                  List.map
+                                    thirdPartyModules
+                                    f::(
+                                      fun m => "-I " ^ (
+                                        String.uncapitalize m |>
+                                          rel dir::buildDirRoot |> Path.reach_from dir::buildDir
+                                      )
+                                    ) |>
+                                    String.concat sep::" "
+                                )
+                                outNameNoExtNoDir
+                                (Path.reach_from dir::buildDir path)
+                          )
+                        )
                     }
                   );
               let cmos =
                 List.map
+                  /* This needs to be sorted */
                   sortedPaths
                   f::(
                     fun path => {
