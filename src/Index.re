@@ -8,3 +8,4 @@ let commonDep3 = Bookshop.ZyBook.a;
 ignore Test.a;
 
 print_int (commonDep + commonDep2 + commonDep3);
+Js.Unsafe.js_expr "document.write('assd')";

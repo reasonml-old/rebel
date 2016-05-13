@@ -88,7 +88,7 @@ let tapAssocList n a =>
 tapAssocList;
 
 /* helpers specific to this jengaroot */
-let stdlibModules = ["List", "String", "Set", "Queue", "Printf", "Stack"];
+let stdlibModules = ["List", "String", "Set", "Queue", "Printf", "Stack", "Js"];
 
 let topLibName = "top";
 
@@ -287,7 +287,9 @@ let compileLibScheme
                     fun () =>
                       bashf
                         dir::buildDir
-                        "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -c -impl %s -o %s"
+                        "ocamlc -pp refmt %s -bin-annot -g -no-alias-deps -w -49 -c -impl %s -o %s"
+                        /* some jsoo includes were here. I don't think they're needed */
+                        ""
                         (Path.basename moduleAliasFilePath)
                         (Path.basename moduleAliasCmoPath)
                   )
@@ -396,8 +398,9 @@ let compileLibScheme
                               fun () =>
                                 bashf
                                   dir::buildDir
-                                  "ocamlc -pp refmt -bin-annot -g -open %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
+                                  "ocamlc -pp refmt -bin-annot -g -open %s -I `ocamlfind query js_of_ocaml` `ocamlfind query js_of_ocaml`/js_of_ocaml.cma -I %s %s -o %s -intf-suffix rei -c -impl %s"
                                   (String.capitalize libName)
+                                  /* "-I /Users/chenglou/.opam/4.02.3/lib/js_of_ocaml /Users/chenglou/.opam/4.02.3/lib/js_of_ocaml/js_of_ocaml.cma" */
                                   (ts buildDir)
                                   (
                                     List.map
@@ -453,7 +456,8 @@ let compileLibScheme
                           action::(
                             bashf
                               dir::buildDir
-                              "ocamlc -g -open %s -a -o %s %s %s %s"
+                              "ocamlc -g -I `ocamlfind query js_of_ocaml` `ocamlfind query js_of_ocaml`/js_of_ocaml.cma -open %s -a -o %s %s %s %s"
+                              /* "-I /Users/chenglou/.opam/4.02.3/lib/js_of_ocaml /Users/chenglou/.opam/4.02.3/lib/js_of_ocaml/js_of_ocaml.cma" */
                               (String.capitalize libName)
                               (Path.basename cmaPath)
                               (
@@ -483,9 +487,11 @@ let compileLibScheme
                     )
                 ]
               };
+            /* exec output and jsoo output */
             let finalOutputRules =
               if isTopLevelLib {
                 let topOutputPath = rel dir::buildDir "output.out";
+                let topOutputPathJsoo = rel dir::buildDir "output.js";
                 [
                   /* ocamlc -g -o _build/hi/entry.out _build/hi/lib.cma _build/hi/hi__main.cmo */
                   Rule.simple
@@ -501,6 +507,15 @@ let compileLibScheme
                         (Path.basename topOutputPath)
                         (Path.basename cmaPath)
                         (topLibName ^ "__Index.cmo")
+                    ),
+                  Rule.simple
+                    targets::[topOutputPathJsoo]
+                    deps::[Dep.path topOutputPath]
+                    action::(
+                      bashf
+                        dir::buildDir
+                        "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
+                        (Path.basename topOutputPath)
                     )
                 ]
               } else {
@@ -583,6 +598,7 @@ let scheme dir::dir => {
           dir::dir
           [
             Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "output.out"),
+            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "output.js"),
             Dep.path (rel dir::root ".merlin")
           ]
       ],

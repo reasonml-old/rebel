@@ -44,7 +44,8 @@ let tapAssocList n a =
      a)
   else a
 let _ = tapAssocList
-let stdlibModules = ["List"; "String"; "Set"; "Queue"; "Printf"; "Stack"]
+let stdlibModules =
+  ["List"; "String"; "Set"; "Queue"; "Printf"; "Stack"; "Js"]
 let topLibName = "top"
 let nodeModulesRoot = rel ~dir:root "node_modules"
 let buildDirRoot = rel ~dir:root "_build"
@@ -182,8 +183,8 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                       ((Dep.path moduleAliasFilePath) *>>|
                          (fun ()  ->
                             bashf ~dir:buildDir
-                              "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -c -impl %s -o %s"
-                              (Path.basename moduleAliasFilePath)
+                              "ocamlc -pp refmt %s -bin-annot -g -no-alias-deps -w -49 -c -impl %s -o %s"
+                              "" (Path.basename moduleAliasFilePath)
                               (Path.basename moduleAliasCmoPath)))] in
                  let sourcesCompileRules =
                    Scheme.rules_dep @@
@@ -293,7 +294,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                            *>>|
                                            (fun ()  ->
                                               bashf ~dir:buildDir
-                                                "ocamlc -pp refmt -bin-annot -g -open %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
+                                                "ocamlc -pp refmt -bin-annot -g -open %s -I `ocamlfind query js_of_ocaml` `ocamlfind query js_of_ocaml`/js_of_ocaml.cma -I %s %s -o %s -intf-suffix rei -c -impl %s"
                                                 (String.capitalize libName)
                                                 (ts buildDir)
                                                 ((List.map thirdPartyModules
@@ -344,7 +345,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                               (List.map transitiveCmaPaths
                                                  ~f:Dep.path)))
                                   ~action:(bashf ~dir:buildDir
-                                             "ocamlc -g -open %s -a -o %s %s %s %s"
+                                             "ocamlc -g -I `ocamlfind query js_of_ocaml` `ocamlfind query js_of_ocaml`/js_of_ocaml.cma -open %s -a -o %s %s %s %s"
                                              (String.capitalize libName)
                                              (Path.basename cmaPath)
                                              (((taplp 1 transitiveCmaPaths)
@@ -373,6 +374,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                    if isTopLevelLib
                    then
                      let topOutputPath = rel ~dir:buildDir "output.out" in
+                     let topOutputPathJsoo = rel ~dir:buildDir "output.js" in
                      [Rule.simple ~targets:[topOutputPath]
                         ~deps:[Dep.path cmaPath;
                               Dep.path
@@ -381,7 +383,12 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                         ~action:(bashf ~dir:buildDir "ocamlc -g -o %s %s %s"
                                    (Path.basename topOutputPath)
                                    (Path.basename cmaPath)
-                                   (topLibName ^ "__Index.cmo"))]
+                                   (topLibName ^ "__Index.cmo"));
+                     Rule.simple ~targets:[topOutputPathJsoo]
+                       ~deps:[Dep.path topOutputPath]
+                       ~action:(bashf ~dir:buildDir
+                                  "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
+                                  (Path.basename topOutputPath))]
                    else [] in
                  Scheme.all
                    [Scheme.rules
@@ -434,6 +441,8 @@ let scheme ~dir  =
          [Rule.default ~dir
             [Dep.path
                (rel ~dir:(rel ~dir:buildDirRoot topLibName) "output.out");
+            Dep.path
+              (rel ~dir:(rel ~dir:buildDirRoot topLibName) "output.js");
             Dep.path (rel ~dir:root ".merlin")]];
        dotMerlinScheme])
   else
