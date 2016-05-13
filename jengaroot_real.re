@@ -98,27 +98,6 @@ let buildDirRoot = rel dir::root "_build";
 
 let topSrcDir = rel dir::root "src";
 
-let sortPathsTopologically buildDirRoot::buildDirRoot libName::libName dir::dir paths::paths => {
-  ignore buildDirRoot;
-  ignore libName;
-  Dep.action_stdout (
-    Dep.all_unit (List.map paths f::Dep.path) *>>| (
-      fun () => {
-        let pathsString =
-          List.map (taplp 1 paths) f::(fun a => " -impl " ^ Path.basename a) |>
-            String.concat sep::" ";
-        bashf dir::dir "ocamldep -pp refmt -sort -one-line %s" (tap 1 pathsString)
-      }
-    )
-  )
-    *>>| (
-    fun string =>
-      String.split string on::' ' |> List.filter f::nonBlank |> List.map f::(rel dir::dir)
-  )
-};
-
-sortPathsTopologically;
-
 /* opinionatedly ignores stdlib modules, which don't follow our third party includes convention ofc */
 let ocamlDepModules sourcePath::sourcePath =>
   Dep.action_stdout (
@@ -158,13 +137,17 @@ let getThirdPartyDepsForLib srcDir::srcDir => Dep.glob_listing (Glob.create dir:
 
 getThirdPartyDepsForLib;
 
+/* this isn't completely generic. mainNode is the start node. We potentially don't traverse the whole graph,
+   only the subgraph connected to mainNode (aka dangling dependencies not used by mainNode are ignored) */
 let topologicalSort mainNode::mainNode assocListGraph => {
   ignore @@ tapAssocList 1 assocListGraph;
   let rec topologicalSort' currNode assocListGraph accum => {
     let nodeDeps =
       switch (List.find assocListGraph f::(fun (n, _) => n == currNode)) {
-      | None => raise (Invalid_argument currNode)
-      | Some (_, nodeDeps) => nodeDeps
+      /* node not found: presume to be third-party dep. This is slightly dangerous because it might also mean
+         we didn't construct the graph correctly. */
+      | None => []
+      | Some (_, nodeDeps') => nodeDeps'
       };
     List.iter nodeDeps f::(fun dep => topologicalSort' dep assocListGraph accum);
     if (not @@ List.exists accum.contents f::(fun n => n == currNode)) {
@@ -173,7 +156,7 @@ let topologicalSort mainNode::mainNode assocListGraph => {
   };
   let accum = {contents: []};
   topologicalSort' mainNode assocListGraph accum;
-  List.rev accum.contents |> List.filter f::(fun m => m != mainNode)
+  List.rev accum.contents
 };
 
 topologicalSort;
@@ -184,7 +167,6 @@ let sortTransitiveThirdParties
     buildDirRoot::buildDirRoot => {
   ignore nodeModulesRoot;
   ignore buildDirRoot;
-  /* let topSourcePathsD = Dep.glob_listing (Glob.create dir::topSrcDir "*.re"); */
   getThirdPartyDepsForLib srcDir::topSrcDir *>>= (
     fun topThirdPartyDeps => {
       let thirdPartiesSrcDirs =
@@ -194,76 +176,58 @@ let sortTransitiveThirdParties
       let thirdPartiesThirdPartyDepsD = Dep.all (
         List.map thirdPartiesSrcDirs f::(fun srcDir => getThirdPartyDepsForLib srcDir::srcDir)
       );
+      let topLibModuleName = String.capitalize topLibName;
       thirdPartiesThirdPartyDepsD *>>| (
         fun thirdPartiesThirdPartyDeps =>
           List.zip_exn
-            [String.capitalize topLibName, ...topThirdPartyDeps]
+            [topLibModuleName, ...topThirdPartyDeps]
             [topThirdPartyDeps, ...thirdPartiesThirdPartyDeps] |>
-            topologicalSort mainNode::(String.capitalize topLibName)
+            topologicalSort mainNode::topLibModuleName |>
+            /* remove the top lib node itself from the sorted result */
+            List.filter f::(fun m => m != topLibModuleName)
       )
-      /* let allSourcePathsD = Dep.all [
-           topSourcePathsD,
-           ...List.map
-                topThirdPartyDeps
-                f::(
-                  fun dep => Dep.glob_listing (
-                    Glob.create
-                      dir::(rel dir::(rel dir::nodeModulesRoot (String.uncapitalize dep)) "src")
-                      "*.re"
-                  )
-                )
-         ];
-         let allModuleDepsD = allSourcePathsD *>>= (
-           fun allSourcePaths => Dep.all (
-             List.map
-               allSourcePaths
-               f::(
-                 fun sourcePaths => Dep.all (
-                   List.map
-                     sourcePaths
-                     f::(fun path => Dep.both (Dep.return path) (ocamlDepModules sourcePath::path))
-                 )
-               )
-           )
-         );
-         let buildRoots = [
-           rel dir::buildDirRoot topLibName,
-           ...List.map
-                topThirdPartyDeps
-                f::(fun buildRoot => rel dir::buildDirRoot (String.uncapitalize buildRoot))
-         ];
-         let depsDepsD = allModuleDepsD *>>| (
-           fun allModulesDeps =>
-             List.map
-               allModulesDeps
-               f::(
-                 fun modulesDeps => {
-                   let ownModules =
-                     List.map modulesDeps f::fst |>
-                       List.map
-                         f::(fun path => fileNameNoExtNoDir suffix::".re" path |> String.capitalize);
-                   /* third-party deps of current module */
-                   List.map modulesDeps f::snd |>
-                     List.concat |>
-                     List.dedup |>
-                     List.filter f::(fun m => not (List.exists ownModules f::(fun m' => m == m')))
-                 }
-               )
-         );
-         depsDepsD *>>| (
-           fun depsDeps =>
-             topologicalSort
-               mainNode::(String.capitalize topLibName)
-               (
-                 List.zip_exn
-                   (List.map buildRoots f::(fun r => Path.basename r |> String.capitalize)) depsDeps
-               )
-         ) */
     }
   )
 };
 
 sortTransitiveThirdParties;
+
+let sortPathsTopologically buildDirRoot::buildDirRoot libName::libName dir::dir paths::paths => {
+  ignore buildDirRoot;
+  ignore libName;
+  /* don't remove this piece of code! This is the `ocamldep -sort`-less version. Except it doesn't traverse
+     the whole graph (see comment on topologicalSort) so we get free dead code elimination. But we do want
+     merlin to pick up newly added files, and DCE means they're not even compiled. We'll change
+     topologicalSort to traverse the whole graph soon. */
+  /* let pathsAsModules =
+       List.map paths f::(fun path => fileNameNoExtNoDir suffix::".re" path |> String.capitalize);
+     let sourcePathsDepsD = Dep.all (List.map paths f::(fun path => ocamlDepModules sourcePath::path));
+     sourcePathsDepsD *>>| (
+       fun sourcePathsDeps =>
+         List.zip_exn pathsAsModules sourcePathsDeps |>
+           topologicalSort mainNode::"Main" |>
+           List.filter f::(fun m => List.exists pathsAsModules f::(fun m' => m' == m)) |>
+           List.map f::(fun m => rel dir::dir (String.uncapitalize m ^ ".re")) |>
+           taplp 0
+     ) */
+  Dep.action_stdout (
+    Dep.all_unit (List.map paths f::Dep.path) *>>| (
+      fun () => {
+        let pathsString =
+          List.map (taplp 1 paths) f::(fun a => " -impl " ^ Path.basename a) |>
+            String.concat sep::" ";
+        bashf dir::dir "ocamldep -pp refmt -sort -one-line %s" (tap 1 pathsString)
+      }
+    )
+  )
+    *>>| (
+    fun string =>
+      String.split string on::' ' |>
+        List.filter f::nonBlank |> List.map f::(rel dir::dir) |> taplp 1
+  )
+};
+
+sortPathsTopologically;
 
 let compileLibScheme
     isTopLevelLib::isTopLevelLib=true
@@ -518,7 +482,7 @@ let compileLibScheme
                     targets::[topOutputPath]
                     deps::[
                       Dep.path cmaPath,
-                      Dep.path (rel dir::buildDir (topLibName ^ "__main.cmo"))
+                      Dep.path (rel dir::buildDir (topLibName ^ "__index.cmo"))
                     ]
                     action::(
                       bashf
@@ -526,7 +490,7 @@ let compileLibScheme
                         "ocamlc -g -o %s %s %s"
                         (Path.basename topOutputPath)
                         (Path.basename cmaPath)
-                        (topLibName ^ "__main.cmo")
+                        (topLibName ^ "__index.cmo")
                     )
                 ]
               } else {

@@ -49,23 +49,6 @@ let topLibName = "top"
 let nodeModulesRoot = rel ~dir:root "node_modules"
 let buildDirRoot = rel ~dir:root "_build"
 let topSrcDir = rel ~dir:root "src"
-let sortPathsTopologically ~buildDirRoot  ~libName  ~dir  ~paths  =
-  ignore buildDirRoot;
-  ignore libName;
-  (Dep.action_stdout
-     ((Dep.all_unit (List.map paths ~f:Dep.path)) *>>|
-        (fun ()  ->
-           let pathsString =
-             (List.map (taplp 1 paths)
-                ~f:(fun a  -> " -impl " ^ (Path.basename a)))
-               |> (String.concat ~sep:" ") in
-           bashf ~dir "ocamldep -pp refmt -sort -one-line %s"
-             (tap 1 pathsString))))
-    *>>|
-    ((fun string  ->
-        ((String.split string ~on:' ') |> (List.filter ~f:nonBlank)) |>
-          (List.map ~f:(rel ~dir))))
-let _ = sortPathsTopologically
 let ocamlDepModules ~sourcePath  =
   (Dep.action_stdout
      ((Dep.path sourcePath) *>>|
@@ -108,15 +91,14 @@ let topologicalSort ~mainNode  assocListGraph =
   (let rec topologicalSort' currNode assocListGraph accum =
      let nodeDeps =
        match List.find assocListGraph ~f:(fun (n,_)  -> n = currNode) with
-       | None  -> raise ((Invalid_argument (currNode)))
-       | ((Some ((_,nodeDeps)))) -> nodeDeps in
+       | None  -> []
+       | ((Some ((_,nodeDeps')))) -> nodeDeps' in
      List.iter nodeDeps
        ~f:(fun dep  -> topologicalSort' dep assocListGraph accum);
      if not @@ (List.exists accum.contents ~f:(fun n  -> n = currNode))
      then accum := (currNode :: (accum.contents)) in
    let accum = { contents = [] } in
-   topologicalSort' mainNode assocListGraph accum;
-   (List.rev accum.contents) |> (List.filter ~f:(fun m  -> m <> mainNode)))
+   topologicalSort' mainNode assocListGraph accum; List.rev accum.contents)
 let _ = topologicalSort
 let sortTransitiveThirdParties ~topLibName  ~nodeModulesRoot  ~buildDirRoot 
   =
@@ -134,13 +116,32 @@ let sortTransitiveThirdParties ~topLibName  ~nodeModulesRoot  ~buildDirRoot
           Dep.all
             (List.map thirdPartiesSrcDirs
                ~f:(fun srcDir  -> getThirdPartyDepsForLib ~srcDir)) in
+        let topLibModuleName = String.capitalize topLibName in
         thirdPartiesThirdPartyDepsD *>>|
           (fun thirdPartiesThirdPartyDeps  ->
-             (List.zip_exn ((String.capitalize topLibName) ::
-                topThirdPartyDeps) (topThirdPartyDeps ::
-                thirdPartiesThirdPartyDeps))
-               |> (topologicalSort ~mainNode:(String.capitalize topLibName)))))
+             ((List.zip_exn (topLibModuleName :: topThirdPartyDeps)
+                 (topThirdPartyDeps :: thirdPartiesThirdPartyDeps))
+                |> (topologicalSort ~mainNode:topLibModuleName))
+               |> (List.filter ~f:(fun m  -> m <> topLibModuleName)))))
 let _ = sortTransitiveThirdParties
+let sortPathsTopologically ~buildDirRoot  ~libName  ~dir  ~paths  =
+  ignore buildDirRoot;
+  ignore libName;
+  (Dep.action_stdout
+     ((Dep.all_unit (List.map paths ~f:Dep.path)) *>>|
+        (fun ()  ->
+           let pathsString =
+             (List.map (taplp 1 paths)
+                ~f:(fun a  -> " -impl " ^ (Path.basename a)))
+               |> (String.concat ~sep:" ") in
+           bashf ~dir "ocamldep -pp refmt -sort -one-line %s"
+             (tap 1 pathsString))))
+    *>>|
+    ((fun string  ->
+        (((String.split string ~on:' ') |> (List.filter ~f:nonBlank)) |>
+           (List.map ~f:(rel ~dir)))
+          |> (taplp 1)))
+let _ = sortPathsTopologically
 let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir 
   ~nodeModulesRoot  ~buildDirRoot  =
   ignore isTopLevelLib;
@@ -372,11 +373,11 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                         ~deps:[Dep.path cmaPath;
                               Dep.path
                                 (rel ~dir:buildDir
-                                   (topLibName ^ "__main.cmo"))]
+                                   (topLibName ^ "__index.cmo"))]
                         ~action:(bashf ~dir:buildDir "ocamlc -g -o %s %s %s"
                                    (Path.basename topOutputPath)
                                    (Path.basename cmaPath)
-                                   (topLibName ^ "__main.cmo"))]
+                                   (topLibName ^ "__index.cmo"))]
                    else [] in
                  Scheme.all
                    [Scheme.rules

@@ -1,9 +1,9 @@
-print_int (A.x + B.x);
+print_int (A.x + B.x + C.x);
 
 print_endline "in main";
 
-let commonDep = Chenglou.Test.age;
-let commonDep2 = Bookshop.Test.commonDep;
+let commonDep = Chenglou.Index.age;
+let commonDep2 = Bookshop.Index.commonDep;
 let commonDep3 = Bookshop.ZyBook.a;
 ignore Test.a;
 
