@@ -150,49 +150,71 @@ let sortTransitiveThirdParties ~topLibName  ~nodeModulesRoot  ~buildDirRoot
   =
   ignore nodeModulesRoot;
   ignore buildDirRoot;
-  (Dep.subdirs ~dir:nodeModulesRoot) *>>=
-    ((fun thirdPartiesNodeModuleRoot  ->
-        let thirdPartiesSourcePathsD =
-          Dep.all
-            (List.map (root :: thirdPartiesNodeModuleRoot)
-               ~f:(fun nodeModuleRoot  ->
+  (let topSourcePathsD =
+     Dep.glob_listing (Glob.create ~dir:(rel ~dir:root "src") "*.re") in
+   let topThirdPartyDepsD =
+     topSourcePathsD *>>=
+       (fun topSourcePaths  ->
+          (Dep.all
+             (List.map topSourcePaths
+                ~f:(fun topSourcePath  ->
+                      getDepModuleSingle ~sourcePath:topSourcePath)))
+            *>>|
+            (fun topDeps  ->
+               ((topDeps |> List.concat) |> List.dedup) |>
+                 (List.filter
+                    ~f:(fun dep  ->
+                          not
+                            (List.exists topSourcePaths
+                               ~f:(fun path  ->
+                                     ((fileNameNoExtNoDir ~suffix:".re" path)
+                                        |> String.capitalize)
+                                       = dep)))))) in
+   topThirdPartyDepsD *>>=
+     (fun topThirdPartyDeps  ->
+        let allSourcePathsD =
+          Dep.all (topSourcePathsD ::
+            (List.map topThirdPartyDeps
+               ~f:(fun dep  ->
                      Dep.glob_listing
-                       (Glob.create ~dir:(rel ~dir:nodeModuleRoot "src")
-                          "*.re"))) in
-        let thirdPartiesModulesDepsD =
-          thirdPartiesSourcePathsD *>>=
-            (fun thirdPartiesSourcePaths  ->
+                       (Glob.create
+                          ~dir:(rel
+                                  ~dir:(rel ~dir:nodeModulesRoot
+                                          (String.uncapitalize dep)) "src")
+                          "*.re")))) in
+        let allModuleDepsD =
+          allSourcePathsD *>>=
+            (fun allSourcePaths  ->
                Dep.all
-                 (List.map thirdPartiesSourcePaths
-                    ~f:(fun thirdPartySourcePaths  ->
+                 (List.map allSourcePaths
+                    ~f:(fun sourcePaths  ->
                           Dep.all
-                            (List.map thirdPartySourcePaths
+                            (List.map sourcePaths
                                ~f:(fun path  ->
                                      Dep.both (Dep.return path)
                                        (getDepModuleSingle ~sourcePath:path)))))) in
         let buildRoots = (rel ~dir:buildDirRoot topLibName) ::
-          (List.map thirdPartiesNodeModuleRoot
+          (List.map topThirdPartyDeps
              ~f:(fun buildRoot  ->
-                   rel ~dir:buildDirRoot (Path.basename buildRoot))) in
+                   rel ~dir:buildDirRoot (String.uncapitalize buildRoot))) in
         let depsDepsD =
-          thirdPartiesModulesDepsD *>>|
-            (fun thirdPartiesModulesDeps  ->
-               List.map thirdPartiesModulesDeps
-                 ~f:(fun thirdPartyModulesDeps  ->
-                       let thirdPartyOwnModules =
-                         (List.map thirdPartyModulesDeps ~f:fst) |>
+          allModuleDepsD *>>|
+            (fun allModulesDeps  ->
+               List.map allModulesDeps
+                 ~f:(fun modulesDeps  ->
+                       let ownModules =
+                         (List.map modulesDeps ~f:fst) |>
                            (List.map
                               ~f:(fun path  ->
                                     (fileNameNoExtNoDir ~suffix:".re" path)
                                       |> String.capitalize)) in
-                       (((List.map thirdPartyModulesDeps ~f:snd) |>
-                           List.concat)
-                          |> List.dedup)
+                       (((List.map modulesDeps ~f:snd) |> List.concat) |>
+                          List.dedup)
                          |>
                          (List.filter
                             ~f:(fun m  ->
                                   not
-                                    (List.exists thirdPartyOwnModules
+                                    (List.exists ownModules
                                        ~f:(fun m'  -> m = m')))))) in
         depsDepsD *>>|
           (fun depsDeps  ->

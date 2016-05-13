@@ -200,9 +200,9 @@ let getDepModuleSingle sourcePath::sourcePath =>
   fun string =>
     switch (String.strip string |> String.split on::':') {
     | [_, deps] =>
-        String.split deps on::' ' |>
-          List.filter f::non_blank |>
-          List.filter f::(fun d => not (List.exists stdlibModules f::(fun m => m == d)))
+      String.split deps on::' ' |>
+        List.filter f::non_blank |>
+        List.filter f::(fun d => not (List.exists stdlibModules f::(fun m => m == d)))
     | _ => failwith "expected exactly one ':' in ocamldep output line"
     }
 );
@@ -253,26 +253,47 @@ let sortTransitiveThirdParties
     buildDirRoot::buildDirRoot => {
   ignore nodeModulesRoot;
   ignore buildDirRoot;
-  /* this is bad bc node_modules dir might be stale (have extra modules), and jenga doesn't clean stale dirs
-     correctly */
-  Dep.subdirs dir::nodeModulesRoot *>>= (
-    fun thirdPartiesNodeModuleRoot => {
-      let thirdPartiesSourcePathsD = Dep.all (
-        List.map
-          [root, ...thirdPartiesNodeModuleRoot]
-          f::(
-            fun nodeModuleRoot => Dep.glob_listing (Glob.create dir::(rel dir::nodeModuleRoot "src") "*.re")
-          )
-      );
-      /* let thirdPartiesModulesDepsD: Dep.t (list (Dep.t (list (Path.t, list string)))) = thirdPartiesSourcePathsD *>>= ( */
-      let thirdPartiesModulesDepsD = thirdPartiesSourcePathsD *>>= (
-        fun thirdPartiesSourcePaths => Dep.all (
-          List.map
-            thirdPartiesSourcePaths
+  let topSourcePathsD = Dep.glob_listing (Glob.create dir::(rel dir::root "src") "*.re");
+  let topThirdPartyDepsD = topSourcePathsD *>>= (
+    fun topSourcePaths =>
+      Dep.all (
+        List.map topSourcePaths f::(fun topSourcePath => getDepModuleSingle sourcePath::topSourcePath)
+      ) *>>| (
+      fun topDeps =>
+        topDeps |>
+          List.concat |>
+          List.dedup |>
+          List.filter
             f::(
-              fun thirdPartySourcePaths => Dep.all (
+              fun dep => not (
+                List.exists
+                  topSourcePaths
+                  f::(fun path => (fileNameNoExtNoDir suffix::".re" path |> String.capitalize) == dep)
+              )
+            )
+    )
+  );
+  topThirdPartyDepsD *>>= (
+    fun topThirdPartyDeps => {
+      let allSourcePathsD = Dep.all [
+        topSourcePathsD,
+        ...List.map
+             topThirdPartyDeps
+             f::(
+               fun dep => Dep.glob_listing (
+                 Glob.create
+                   dir::(rel dir::(rel dir::nodeModulesRoot (String.uncapitalize dep)) "src") "*.re"
+               )
+             )
+      ];
+      let allModuleDepsD = allSourcePathsD *>>= (
+        fun allSourcePaths => Dep.all (
+          List.map
+            allSourcePaths
+            f::(
+              fun sourcePaths => Dep.all (
                 List.map
-                  thirdPartySourcePaths
+                  sourcePaths
                   f::(fun path => Dep.both (Dep.return path) (getDepModuleSingle sourcePath::path))
               )
             )
@@ -281,22 +302,22 @@ let sortTransitiveThirdParties
       let buildRoots = [
         rel dir::buildDirRoot topLibName,
         ...List.map
-             thirdPartiesNodeModuleRoot f::(fun buildRoot => rel dir::buildDirRoot (Path.basename buildRoot))
+             topThirdPartyDeps f::(fun buildRoot => rel dir::buildDirRoot (String.uncapitalize buildRoot))
       ];
-      let depsDepsD = thirdPartiesModulesDepsD *>>| (
-        fun thirdPartiesModulesDeps =>
+      let depsDepsD = allModuleDepsD *>>| (
+        fun allModulesDeps =>
           List.map
-            thirdPartiesModulesDeps
+            allModulesDeps
             f::(
-              fun thirdPartyModulesDeps => {
-                let thirdPartyOwnModules =
-                  List.map thirdPartyModulesDeps f::fst |>
+              fun modulesDeps => {
+                let ownModules =
+                  List.map modulesDeps f::fst |>
                     List.map f::(fun path => fileNameNoExtNoDir suffix::".re" path |> String.capitalize);
                 /* third-party deps of current module */
-                List.map thirdPartyModulesDeps f::snd |>
+                List.map modulesDeps f::snd |>
                   List.concat |>
                   List.dedup |>
-                  List.filter f::(fun m => not (List.exists thirdPartyOwnModules f::(fun m' => m == m')))
+                  List.filter f::(fun m => not (List.exists ownModules f::(fun m' => m == m')))
               }
             )
       );
