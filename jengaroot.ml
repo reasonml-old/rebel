@@ -49,6 +49,10 @@ let topLibName = "top"
 let nodeModulesRoot = rel ~dir:root "node_modules"
 let buildDirRoot = rel ~dir:root "_build"
 let topSrcDir = rel ~dir:root "src"
+let stringCapitalize a = a
+let stringUncapitalize a = a
+let _ = stringCapitalize
+let _ = stringUncapitalize
 let ocamlDepModules ~sourcePath  =
   (Dep.action_stdout
      ((Dep.path sourcePath) *>>|
@@ -78,7 +82,7 @@ let getThirdPartyDepsForLib ~srcDir  =
               List.map sourcePaths
                 ~f:(fun path  ->
                       (fileNameNoExtNoDir ~suffix:".re" path) |>
-                        String.capitalize) in
+                        stringCapitalize) in
             ((List.concat sourcePathsDeps) |> List.dedup) |>
               (List.filter
                  ~f:(fun dep  ->
@@ -162,7 +166,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                       ~f:(fun path  ->
                             let name = fileNameNoExtNoDir path ~suffix:".re" in
                             Printf.sprintf "let module %s = %s__%s;\n"
-                              (String.capitalize name)
+                              (stringCapitalize name)
                               (String.capitalize libName) name))
                      |> (String.concat ~sep:"") in
                  let moduleAliasContentRules =
@@ -197,7 +201,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                             ~suffix:".re"
                                                             path)
                                                            |>
-                                                           String.capitalize)
+                                                           stringCapitalize)
                                                           = m)) in
                                       let thirdPartyModules =
                                         List.filter modules
@@ -209,7 +213,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                                ~suffix:".re"
                                                                path)
                                                               |>
-                                                              String.capitalize)
+                                                              stringCapitalize)
                                                              = m))) in
                                       let firstPartyModuleDeps =
                                         List.map (tapl 1 firstPartyModules)
@@ -218,7 +222,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                   (rel ~dir:buildDir
                                                      (libName ^
                                                         ("__" ^
-                                                           ((String.uncapitalize
+                                                           ((stringUncapitalize
                                                                m)
                                                               ^ ".cmi"))))) in
                                       let outNameNoExtNoDir =
@@ -295,7 +299,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                 ((List.map thirdPartyModules
                                                     ~f:(fun m  ->
                                                           "-I " ^
-                                                            (((String.uncapitalize
+                                                            (((stringUncapitalize
                                                                  m)
                                                                 |>
                                                                 (rel
@@ -373,11 +377,11 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                         ~deps:[Dep.path cmaPath;
                               Dep.path
                                 (rel ~dir:buildDir
-                                   (topLibName ^ "__index.cmo"))]
+                                   (topLibName ^ "__Index.cmo"))]
                         ~action:(bashf ~dir:buildDir "ocamlc -g -o %s %s %s"
                                    (Path.basename topOutputPath)
                                    (Path.basename cmaPath)
-                                   (topLibName ^ "__index.cmo"))]
+                                   (topLibName ^ "__Index.cmo"))]
                    else [] in
                  Scheme.all
                    [Scheme.rules

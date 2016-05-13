@@ -98,6 +98,16 @@ let buildDirRoot = rel dir::root "_build";
 
 let topSrcDir = rel dir::root "src";
 
+/* revert these to String.capitalize and String.uncapitalize to recover *from* our new assumption that file
+   names are capitalized */
+let stringCapitalize a => a;
+
+let stringUncapitalize a => a;
+
+stringCapitalize;
+
+stringUncapitalize;
+
 /* opinionatedly ignores stdlib modules, which don't follow our third party includes convention ofc */
 let ocamlDepModules sourcePath::sourcePath =>
   Dep.action_stdout (
@@ -127,7 +137,7 @@ let getThirdPartyDepsForLib srcDir::srcDir => Dep.glob_listing (Glob.create dir:
     fun sourcePathsDeps => {
       let internalDeps =
         List.map
-          sourcePaths f::(fun path => fileNameNoExtNoDir suffix::".re" path |> String.capitalize);
+          sourcePaths f::(fun path => fileNameNoExtNoDir suffix::".re" path |> stringCapitalize);
       List.concat sourcePathsDeps |>
         List.dedup |>
         List.filter f::(fun dep => not (List.exists internalDeps f::(fun dep' => dep == dep')))
@@ -200,14 +210,14 @@ let sortPathsTopologically buildDirRoot::buildDirRoot libName::libName dir::dir 
      merlin to pick up newly added files, and DCE means they're not even compiled. We'll change
      topologicalSort to traverse the whole graph soon. */
   /* let pathsAsModules =
-       List.map paths f::(fun path => fileNameNoExtNoDir suffix::".re" path |> String.capitalize);
+       List.map paths f::(fun path => fileNameNoExtNoDir suffix::".re" path |> stringCapitalize);
      let sourcePathsDepsD = Dep.all (List.map paths f::(fun path => ocamlDepModules sourcePath::path));
      sourcePathsDepsD *>>| (
        fun sourcePathsDeps =>
          List.zip_exn pathsAsModules sourcePathsDeps |>
            topologicalSort mainNode::"Main" |>
            List.filter f::(fun m => List.exists pathsAsModules f::(fun m' => m' == m)) |>
-           List.map f::(fun m => rel dir::dir (String.uncapitalize m ^ ".re")) |>
+           List.map f::(fun m => rel dir::dir (stringUncapitalize m ^ ".re")) |>
            taplp 0
      ) */
   Dep.action_stdout (
@@ -258,7 +268,7 @@ let compileLibScheme
                     let name = fileNameNoExtNoDir path suffix::".re";
                     Printf.sprintf
                       "let module %s = %s__%s;\n"
-                      (String.capitalize name)
+                      (stringCapitalize name)
                       (String.capitalize libName)
                       name
                   }
@@ -300,7 +310,7 @@ let compileLibScheme
                                   unsortedPaths
                                   f::(
                                     fun path => (
-                                      fileNameNoExtNoDir suffix::".re" path |> String.capitalize
+                                      fileNameNoExtNoDir suffix::".re" path |> stringCapitalize
                                     ) == m
                                   )
                             );
@@ -313,7 +323,7 @@ let compileLibScheme
                                   unsortedPaths
                                   f::(
                                     fun path => (
-                                      fileNameNoExtNoDir suffix::".re" path |> String.capitalize
+                                      fileNameNoExtNoDir suffix::".re" path |> stringCapitalize
                                     ) == m
                                   )
                               )
@@ -324,7 +334,7 @@ let compileLibScheme
                             /* compiling here only needs cmi */
                             f::(
                               fun m => Dep.path (
-                                rel dir::buildDir (libName ^ "__" ^ String.uncapitalize m ^ ".cmi")
+                                rel dir::buildDir (libName ^ "__" ^ stringUncapitalize m ^ ".cmi")
                               )
                             );
                         let outNameNoExtNoDir =
@@ -394,7 +404,7 @@ let compileLibScheme
                                       thirdPartyModules
                                       f::(
                                         fun m => "-I " ^ (
-                                          String.uncapitalize m |>
+                                          stringUncapitalize m |>
                                             rel dir::buildDirRoot |> Path.reach_from dir::buildDir
                                         )
                                       ) |>
@@ -482,7 +492,7 @@ let compileLibScheme
                     targets::[topOutputPath]
                     deps::[
                       Dep.path cmaPath,
-                      Dep.path (rel dir::buildDir (topLibName ^ "__index.cmo"))
+                      Dep.path (rel dir::buildDir (topLibName ^ "__Index.cmo"))
                     ]
                     action::(
                       bashf
@@ -490,7 +500,7 @@ let compileLibScheme
                         "ocamlc -g -o %s %s %s"
                         (Path.basename topOutputPath)
                         (Path.basename cmaPath)
-                        (topLibName ^ "__index.cmo")
+                        (topLibName ^ "__Index.cmo")
                     )
                 ]
               } else {
