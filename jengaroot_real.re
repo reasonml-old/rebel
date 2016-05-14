@@ -223,10 +223,11 @@ let sortPathsTopologically buildDirRoot::buildDirRoot libName::libName dir::dir 
   Dep.action_stdout (
     Dep.all_unit (List.map paths f::Dep.path) *>>| (
       fun () => {
-        let pathsString =
-          List.map (taplp 1 paths) f::(fun a => " -impl " ^ Path.basename a) |>
-            String.concat sep::" ";
-        bashf dir::dir "ocamldep -pp refmt -sort -one-line %s" (tap 1 pathsString)
+        let pathsString = List.map (taplp 1 paths) f::Path.basename |> String.concat sep::" ";
+        bashf
+          dir::dir
+          "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -sort -one-line %s"
+          (tap 1 pathsString)
       }
     )
   )
