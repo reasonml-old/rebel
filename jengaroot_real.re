@@ -25,8 +25,10 @@ let nonBlank s =>
   | _ => true
   };
 
-let fileNameNoExtNoDir path suffix::suffix =>
-  Path.basename path |> String.chop_suffix_exn suffix::suffix;
+/* assumes there is a suffix to chop. Throws otherwise */
+let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
+
+let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
 
 fileNameNoExtNoDir;
 
@@ -108,25 +110,72 @@ stringCapitalize;
 
 stringUncapitalize;
 
+/* let allThirdPartyDeps = Dep.subdirs dir::nodeModulesRoot *>>| (
+     fun paths =>
+       List.map paths f::(fun path => fileNameNoExtNoDir  path |> String.uppercase)
+   );
+
+   allThirdPartyDeps; */
 /* opinionatedly ignores stdlib modules, which don't follow our third party includes convention ofc */
-let ocamlDepModules sourcePath::sourcePath =>
-  Dep.action_stdout (
-    Dep.path sourcePath *>>| (
-      fun () =>
-        bashf
-          dir::(Path.dirname sourcePath)
-          "ocamldep -pp refmt -modules -one-line -impl %s"
-          (Path.basename sourcePath)
+let ocamlDepModules sourcePath::sourcePath => Dep.subdirs dir::nodeModulesRoot *>>= (
+  fun subdirs => {
+    let execDir = Path.dirname sourcePath;
+    let thirdPartyBuildRoots =
+      List.map subdirs f::(fun subdir => rel dir::buildDirRoot (Path.basename subdir));
+    Dep.action_stdout (
+      Dep.all_unit [
+        Dep.path sourcePath,
+        Dep.all_unit (
+          List.map
+            thirdPartyBuildRoots
+            f::(fun buildRoot => rel dir::buildRoot (Path.basename buildRoot ^ ".cmi") |> Dep.path)
+        )
+      ]
+        *>>| (
+        fun () =>
+          bashf
+            dir::execDir
+            "ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -one-line %s"
+            (
+              thirdPartyBuildRoots |>
+                List.map f::(fun path => Path.reach_from dir::execDir path) |>
+                List.map f::(fun path => "-I " ^ path) |>
+                String.concat sep::" "
+            )
+            (Path.basename sourcePath)
+      )
     )
-  ) *>>| (
-  fun string =>
-    switch (String.strip string |> String.split on::':') {
-    | [_, deps] =>
-      String.split deps on::' ' |>
-        List.filter f::nonBlank |>
-        List.filter f::(fun d => not (List.exists stdlibModules f::(fun m => m == d)))
-    | _ => failwith "expected exactly one ':' in ocamldep output line"
-    }
+      *>>| (
+      fun string =>
+        switch (
+          String.strip string |> String.split on::'\n' |> List.hd_exn |> String.split on::':'
+        ) {
+        | [original, deps] =>
+          String.split deps on::' ' |>
+            List.filter f::nonBlank |>
+            List.map f::chopSuffixExn |>
+            /* TODO: mother of all fragile logic. */
+            /* node_modules/bookshop/src/Index.cmo : node_modules/bookshop/src/Index.cmi */
+            /* ^ this means that there's a rei interface file for it. Filter it out */
+            List.filter f::(fun m => m != chopSuffixExn original) |>
+            /* TODO: fragile logic. The result might be ../_build/bookshop/bookshop.cmo so this is how we
+               temporarily detect it */
+            List.map
+              f::(
+                fun m =>
+                  switch (String.rindex m '/') {
+                  | None => m
+                  | Some idx => String.slice m (idx + 1) (String.length m) |> String.capitalize
+                  }
+              ) |>
+            tapl 1 |>
+            /* TODO: filter out stdlib modules since we won't find them in node_modules. This is fragile
+               too. */
+            List.filter f::(fun d => not (List.exists stdlibModules f::(fun m => m == d)))
+        | _ => failwith "expected exactly one ':' in ocamldep output line"
+        }
+    )
+  }
 );
 
 ocamlDepModules;
@@ -136,8 +185,7 @@ let getThirdPartyDepsForLib srcDir::srcDir => Dep.glob_listing (Glob.create dir:
     Dep.all (List.map sourcePaths f::(fun sourcePath => ocamlDepModules sourcePath::sourcePath)) *>>| (
     fun sourcePathsDeps => {
       let internalDeps =
-        List.map
-          sourcePaths f::(fun path => fileNameNoExtNoDir suffix::".re" path |> stringCapitalize);
+        List.map sourcePaths f::(fun path => fileNameNoExtNoDir path |> stringCapitalize);
       List.concat sourcePathsDeps |>
         List.dedup |>
         List.filter f::(fun dep => not (List.exists internalDeps f::(fun dep' => dep == dep')))
@@ -210,7 +258,7 @@ let sortPathsTopologically buildDirRoot::buildDirRoot libName::libName dir::dir 
      merlin to pick up newly added files, and DCE means they're not even compiled. We'll change
      topologicalSort to traverse the whole graph soon. */
   /* let pathsAsModules =
-       List.map paths f::(fun path => fileNameNoExtNoDir suffix::".re" path |> stringCapitalize);
+       List.map paths f::(fun path => fileNameNoExtNoDir  path |> stringCapitalize);
      let sourcePathsDepsD = Dep.all (List.map paths f::(fun path => ocamlDepModules sourcePath::path));
      sourcePathsDepsD *>>| (
        fun sourcePathsDeps =>
@@ -266,7 +314,7 @@ let compileLibScheme
                 unsortedPaths
                 f::(
                   fun path => {
-                    let name = fileNameNoExtNoDir path suffix::".re";
+                    let name = fileNameNoExtNoDir path;
                     Printf.sprintf
                       "let module %s = %s__%s;\n"
                       (stringCapitalize name)
@@ -312,9 +360,7 @@ let compileLibScheme
                                 List.exists
                                   unsortedPaths
                                   f::(
-                                    fun path => (
-                                      fileNameNoExtNoDir suffix::".re" path |> stringCapitalize
-                                    ) == m
+                                    fun path => (fileNameNoExtNoDir path |> stringCapitalize) == m
                                   )
                             );
                         let thirdPartyModules =
@@ -325,9 +371,7 @@ let compileLibScheme
                                 List.exists
                                   unsortedPaths
                                   f::(
-                                    fun path => (
-                                      fileNameNoExtNoDir suffix::".re" path |> stringCapitalize
-                                    ) == m
+                                    fun path => (fileNameNoExtNoDir path |> stringCapitalize) == m
                                   )
                               )
                             );
@@ -340,8 +384,7 @@ let compileLibScheme
                                 rel dir::buildDir (libName ^ "__" ^ stringUncapitalize m ^ ".cmi")
                               )
                             );
-                        let outNameNoExtNoDir =
-                          libName ^ "__" ^ fileNameNoExtNoDir path suffix::".re";
+                        let outNameNoExtNoDir = libName ^ "__" ^ fileNameNoExtNoDir path;
                         let outCmi = rel dir::buildDir (outNameNoExtNoDir ^ ".cmi") |> tapp 1;
                         let outCmo = rel dir::buildDir (outNameNoExtNoDir ^ ".cmo");
                         let outCmt = rel dir::buildDir (outNameNoExtNoDir ^ ".cmt");
@@ -382,8 +425,7 @@ let compileLibScheme
                                                       (
                                                         libName ^
                                                           "__" ^
-                                                          fileNameNoExtNoDir
-                                                            suffix::".re" sourcePath ^
+                                                          fileNameNoExtNoDir sourcePath ^
                                                           ".cmi"
                                                       )
                                                   )
@@ -427,7 +469,7 @@ let compileLibScheme
                 sortedPaths
                 f::(
                   fun path => {
-                    let outNameNoExtNoDir = libName ^ "__" ^ fileNameNoExtNoDir path suffix::".re";
+                    let outNameNoExtNoDir = libName ^ "__" ^ fileNameNoExtNoDir path;
                     rel dir::buildDir (outNameNoExtNoDir ^ ".cmo")
                   }
                 );

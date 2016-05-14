@@ -10,8 +10,8 @@ let bash ~dir  command =
   Action.process ~dir ~prog:"bash" ~args:["-c"; command] ()
 let bashf ~dir  fmt = ksprintf (fun str  -> bash ~dir str) fmt
 let nonBlank s = match String.strip s with | "" -> false | _ -> true
-let fileNameNoExtNoDir path ~suffix  =
-  (Path.basename path) |> (String.chop_suffix_exn ~suffix)
+let chopSuffixExn str = String.slice str 0 (String.rindex_exn str '.')
+let fileNameNoExtNoDir path = (Path.basename path) |> chopSuffixExn
 let _ = fileNameNoExtNoDir
 let tap n a =
   if n = 0 then (print_endline "tap---------"; print_endline a; a) else a
@@ -55,21 +55,58 @@ let stringUncapitalize a = a
 let _ = stringCapitalize
 let _ = stringUncapitalize
 let ocamlDepModules ~sourcePath  =
-  (Dep.action_stdout
-     ((Dep.path sourcePath) *>>|
-        (fun ()  ->
-           bashf ~dir:(Path.dirname sourcePath)
-             "ocamldep -pp refmt -modules -one-line -impl %s"
-             (Path.basename sourcePath))))
-    *>>|
-    (fun string  ->
-       match (String.strip string) |> (String.split ~on:':') with
-       | _::deps::[] ->
-           ((String.split deps ~on:' ') |> (List.filter ~f:nonBlank)) |>
-             (List.filter
-                ~f:(fun d  ->
-                      not (List.exists stdlibModules ~f:(fun m  -> m = d))))
-       | _ -> failwith "expected exactly one ':' in ocamldep output line")
+  (Dep.subdirs ~dir:nodeModulesRoot) *>>=
+    (fun subdirs  ->
+       let execDir = Path.dirname sourcePath in
+       let thirdPartyBuildRoots =
+         List.map subdirs
+           ~f:(fun subdir  -> rel ~dir:buildDirRoot (Path.basename subdir)) in
+       (Dep.action_stdout
+          ((Dep.all_unit
+              [Dep.path sourcePath;
+              Dep.all_unit
+                (List.map thirdPartyBuildRoots
+                   ~f:(fun buildRoot  ->
+                         (rel ~dir:buildRoot
+                            ((Path.basename buildRoot) ^ ".cmi"))
+                           |> Dep.path))])
+             *>>|
+             (fun ()  ->
+                bashf ~dir:execDir
+                  "ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -one-line %s"
+                  (((thirdPartyBuildRoots |>
+                       (List.map
+                          ~f:(fun path  -> Path.reach_from ~dir:execDir path)))
+                      |> (List.map ~f:(fun path  -> "-I " ^ path)))
+                     |> (String.concat ~sep:" ")) (Path.basename sourcePath))))
+         *>>|
+         (fun string  ->
+            match (((String.strip string) |> (String.split ~on:'\n')) |>
+                     List.hd_exn)
+                    |> (String.split ~on:':')
+            with
+            | original::deps::[] ->
+                ((((((String.split deps ~on:' ') |> (List.filter ~f:nonBlank))
+                      |> (List.map ~f:chopSuffixExn))
+                     |>
+                     (List.filter
+                        ~f:(fun m  -> m <> (chopSuffixExn original))))
+                    |>
+                    (List.map
+                       ~f:(fun m  ->
+                             match String.rindex m '/' with
+                             | None  -> m
+                             | ((Some (idx))) ->
+                                 (String.slice m (idx + 1) (String.length m))
+                                   |> String.capitalize)))
+                   |> (tapl 1))
+                  |>
+                  (List.filter
+                     ~f:(fun d  ->
+                           not
+                             (List.exists stdlibModules ~f:(fun m  -> m = d))))
+            | _ ->
+                failwith "expected exactly one ':' in ocamldep output line"))
 let _ = ocamlDepModules
 let getThirdPartyDepsForLib ~srcDir  =
   (Dep.glob_listing (Glob.create ~dir:srcDir "*.re")) *>>=
@@ -82,8 +119,7 @@ let getThirdPartyDepsForLib ~srcDir  =
             let internalDeps =
               List.map sourcePaths
                 ~f:(fun path  ->
-                      (fileNameNoExtNoDir ~suffix:".re" path) |>
-                        stringCapitalize) in
+                      (fileNameNoExtNoDir path) |> stringCapitalize) in
             ((List.concat sourcePathsDeps) |> List.dedup) |>
               (List.filter
                  ~f:(fun dep  ->
@@ -136,10 +172,10 @@ let sortPathsTopologically ~buildDirRoot  ~libName  ~dir  ~paths  =
      ((Dep.all_unit (List.map paths ~f:Dep.path)) *>>|
         (fun ()  ->
            let pathsString =
-             (List.map (taplp 1 paths)
-                ~f:(fun a  -> " -impl " ^ (Path.basename a)))
-               |> (String.concat ~sep:" ") in
-           bashf ~dir "ocamldep -pp refmt -sort -one-line %s"
+             (List.map (taplp 1 paths) ~f:Path.basename) |>
+               (String.concat ~sep:" ") in
+           bashf ~dir
+             "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -sort -one-line %s"
              (tap 1 pathsString))))
     *>>|
     ((fun string  ->
@@ -165,7 +201,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                  let moduleAliasContent =
                    (List.map unsortedPaths
                       ~f:(fun path  ->
-                            let name = fileNameNoExtNoDir path ~suffix:".re" in
+                            let name = fileNameNoExtNoDir path in
                             Printf.sprintf "let module %s = %s__%s;\n"
                               (stringCapitalize name)
                               (String.capitalize libName) name))
@@ -199,7 +235,6 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                 List.exists unsortedPaths
                                                   ~f:(fun path  ->
                                                         ((fileNameNoExtNoDir
-                                                            ~suffix:".re"
                                                             path)
                                                            |>
                                                            stringCapitalize)
@@ -211,7 +246,6 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                   (List.exists unsortedPaths
                                                      ~f:(fun path  ->
                                                            ((fileNameNoExtNoDir
-                                                               ~suffix:".re"
                                                                path)
                                                               |>
                                                               stringCapitalize)
@@ -228,9 +262,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                               ^ ".cmi"))))) in
                                       let outNameNoExtNoDir =
                                         libName ^
-                                          ("__" ^
-                                             (fileNameNoExtNoDir path
-                                                ~suffix:".re")) in
+                                          ("__" ^ (fileNameNoExtNoDir path)) in
                                       let outCmi =
                                         (rel ~dir:buildDir
                                            (outNameNoExtNoDir ^ ".cmi"))
@@ -288,7 +320,6 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                                     ^
                                                                     ("__" ^
                                                                     ((fileNameNoExtNoDir
-                                                                    ~suffix:".re"
                                                                     sourcePath)
                                                                     ^ ".cmi")))))))))])))
                                            *>>|
@@ -317,9 +348,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                    List.map sortedPaths
                      ~f:(fun path  ->
                            let outNameNoExtNoDir =
-                             libName ^
-                               ("__" ^
-                                  (fileNameNoExtNoDir path ~suffix:".re")) in
+                             libName ^ ("__" ^ (fileNameNoExtNoDir path)) in
                            rel ~dir:buildDir (outNameNoExtNoDir ^ ".cmo")) in
                  let cmaPath = rel ~dir:buildDir "lib.cma" in
                  let cmaCompileRulesScheme =
