@@ -31,6 +31,18 @@ Current directory structure:
 
 As of today, works on latest locally pinned jenga, ocaml v4.02.3, and whatever `opam update` dependencies versions.
 
+## Restrictions
+Most of these are for the ease of the prototype, but they might or might not be temporary.
+
+- Only works with [censored] source files for now.
+- Needs a `src/`.
+- `src/` must be flat.
+- Source files must be upper-cased.
+- Entry file must be called `Index.re`.
+- Third-party deps go into `node_modules/`.
+- Third-party deps names are uncapitalized (can contain upper-case in the whole word).
+- Don't open a module and refer to its inner module that has the same name as the current file (this causes some false positive cycle detection. Will fix later).
+
 **To run**: `jenga`.
 
 **To develop the jengaroot yourself**: have all the [censored] toolchain installed. Compile to jengaroot.ml. Here's a convenient compile & prettify command I've temporarily included in my bashrc/zshrc:
