@@ -89,9 +89,6 @@ let tapAssocList n a =>
 
 tapAssocList;
 
-/* helpers specific to this jengaroot */
-let stdlibModules = ["List", "String", "Set", "Queue", "Printf", "Stack", "Js"];
-
 let topLibName = "top";
 
 let nodeModulesRoot = rel dir::root "node_modules";
@@ -116,7 +113,6 @@ stringUncapitalize;
    );
 
    allThirdPartyDeps; */
-/* opinionatedly ignores stdlib modules, which don't follow our third party includes convention ofc */
 let ocamlDepModules sourcePath::sourcePath => Dep.subdirs dir::nodeModulesRoot *>>= (
   fun subdirs => {
     let execDir = Path.dirname sourcePath;
@@ -168,10 +164,7 @@ let ocamlDepModules sourcePath::sourcePath => Dep.subdirs dir::nodeModulesRoot *
                   | Some idx => String.slice m (idx + 1) (String.length m) |> String.capitalize
                   }
               ) |>
-            tapl 1 |>
-            /* TODO: filter out stdlib modules since we won't find them in node_modules. This is fragile
-               too. */
-            List.filter f::(fun d => not (List.exists stdlibModules f::(fun m => m == d)))
+            tapl 1
         | _ => failwith "expected exactly one ':' in ocamldep output line"
         }
     )
@@ -336,7 +329,8 @@ let compileLibScheme
                     fun () =>
                       bashf
                         dir::buildDir
-                        "ocamlc -pp refmt %s -bin-annot -g -no-alias-deps -w -49 -c -impl %s -o %s"
+                        /* TODO: explain the warning suppression */
+                        "ocamlc -pp refmt %s -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
                         /* some jsoo includes were here. I don't think they're needed */
                         ""
                         (Path.basename moduleAliasFilePath)
@@ -441,7 +435,8 @@ let compileLibScheme
                               fun () =>
                                 bashf
                                   dir::buildDir
-                                  "ocamlc -pp refmt -bin-annot -g -open %s -I `ocamlfind query js_of_ocaml` `ocamlfind query js_of_ocaml`/js_of_ocaml.cma -I %s %s -o %s -intf-suffix rei -c -impl %s"
+                                  /* TODO: explain the warning suppression */
+                                  "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s -I `ocamlfind query js_of_ocaml` `ocamlfind query js_of_ocaml`/js_of_ocaml.cma -I %s %s -o %s -intf-suffix rei -c -impl %s"
                                   (String.capitalize libName)
                                   /* "-I /Users/chenglou/.opam/4.02.3/lib/js_of_ocaml /Users/chenglou/.opam/4.02.3/lib/js_of_ocaml/js_of_ocaml.cma" */
                                   (ts buildDir)
@@ -595,6 +590,8 @@ let generateDotMerlinScheme
 S %s
 
 B %s
+
+PKG js_of_ocaml
 
 FLG -w -30 -w -40 -open %s
 |}

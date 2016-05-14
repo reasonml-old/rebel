@@ -44,8 +44,6 @@ let tapAssocList n a =
      a)
   else a
 let _ = tapAssocList
-let stdlibModules =
-  ["List"; "String"; "Set"; "Queue"; "Printf"; "Stack"; "Js"]
 let topLibName = "top"
 let nodeModulesRoot = rel ~dir:root "node_modules"
 let buildDirRoot = rel ~dir:root "_build"
@@ -86,25 +84,19 @@ let ocamlDepModules ~sourcePath  =
                     |> (String.split ~on:':')
             with
             | original::deps::[] ->
-                ((((((String.split deps ~on:' ') |> (List.filter ~f:nonBlank))
-                      |> (List.map ~f:chopSuffixExn))
-                     |>
-                     (List.filter
-                        ~f:(fun m  -> m <> (chopSuffixExn original))))
+                (((((String.split deps ~on:' ') |> (List.filter ~f:nonBlank))
+                     |> (List.map ~f:chopSuffixExn))
                     |>
-                    (List.map
-                       ~f:(fun m  ->
-                             match String.rindex m '/' with
-                             | None  -> m
-                             | ((Some (idx))) ->
-                                 (String.slice m (idx + 1) (String.length m))
-                                   |> String.capitalize)))
-                   |> (tapl 1))
-                  |>
-                  (List.filter
-                     ~f:(fun d  ->
-                           not
-                             (List.exists stdlibModules ~f:(fun m  -> m = d))))
+                    (List.filter ~f:(fun m  -> m <> (chopSuffixExn original))))
+                   |>
+                   (List.map
+                      ~f:(fun m  ->
+                            match String.rindex m '/' with
+                            | None  -> m
+                            | ((Some (idx))) ->
+                                (String.slice m (idx + 1) (String.length m))
+                                  |> String.capitalize)))
+                  |> (tapl 1)
             | _ ->
                 failwith "expected exactly one ':' in ocamldep output line"))
 let _ = ocamlDepModules
@@ -219,7 +211,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                       ((Dep.path moduleAliasFilePath) *>>|
                          (fun ()  ->
                             bashf ~dir:buildDir
-                              "ocamlc -pp refmt %s -bin-annot -g -no-alias-deps -w -49 -c -impl %s -o %s"
+                              "ocamlc -pp refmt %s -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
                               "" (Path.basename moduleAliasFilePath)
                               (Path.basename moduleAliasCmoPath)))] in
                  let sourcesCompileRules =
@@ -325,7 +317,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                            *>>|
                                            (fun ()  ->
                                               bashf ~dir:buildDir
-                                                "ocamlc -pp refmt -bin-annot -g -open %s -I `ocamlfind query js_of_ocaml` `ocamlfind query js_of_ocaml`/js_of_ocaml.cma -I %s %s -o %s -intf-suffix rei -c -impl %s"
+                                                "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s -I `ocamlfind query js_of_ocaml` `ocamlfind query js_of_ocaml`/js_of_ocaml.cma -I %s %s -o %s -intf-suffix rei -c -impl %s"
                                                 (String.capitalize libName)
                                                 (ts buildDir)
                                                 ((List.map thirdPartyModules
@@ -434,10 +426,13 @@ let generateDotMerlinScheme ~nodeModulesRoot  ~buildDirRoot  ~isTopLevelLib
   ignore dir;
   ignore root;
   (let dotMerlinContent =
-     Printf.sprintf {|%s
+     Printf.sprintf
+       {|%s
 S %s
 
 B %s
+
+PKG js_of_ocaml
 
 FLG -w -30 -w -40 -open %s
 |}
