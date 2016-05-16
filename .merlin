@@ -1,7 +1,7 @@
-src/*
+S src
 S ./node_modules/**/src
 
-B ./_build/**
+B ./_build/*
 
 PKG js_of_ocaml
 

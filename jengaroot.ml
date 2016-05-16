@@ -436,9 +436,9 @@ PKG js_of_ocaml
 
 FLG -w -30 -w -40 -open %s
 |}
-       (match isTopLevelLib with | true  -> "src/*" | false  -> "")
+       (match isTopLevelLib with | true  -> "S src" | false  -> "")
        (Path.reach_from ~dir (rel ~dir:nodeModulesRoot "**/src"))
-       (Path.reach_from ~dir (rel ~dir:buildDirRoot "**"))
+       (Path.reach_from ~dir (rel ~dir:buildDirRoot "*"))
        (String.capitalize libName) in
    Scheme.rules
      [Rule.simple ~targets:[rel ~dir ".merlin"] ~deps:[]

@@ -595,9 +595,9 @@ PKG js_of_ocaml
 
 FLG -w -30 -w -40 -open %s
 |}
-      (isTopLevelLib ? "src/*" : "")
+      (isTopLevelLib ? "S src" : "")
       (Path.reach_from dir::dir (rel dir::nodeModulesRoot "**/src"))
-      (Path.reach_from dir::dir (rel dir::buildDirRoot "**"))
+      (Path.reach_from dir::dir (rel dir::buildDirRoot "*"))
       (String.capitalize libName);
   Scheme.rules [
     Rule.simple
