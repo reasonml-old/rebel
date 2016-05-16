@@ -394,8 +394,8 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                  let finalOutputRules =
                    if isTopLevelLib
                    then
-                     let topOutputPath = rel ~dir:buildDir "output.out" in
-                     let topOutputPathJsoo = rel ~dir:buildDir "output.js" in
+                     let topOutputPath = rel ~dir:buildDir "app.out" in
+                     let topOutputPathJsoo = rel ~dir:buildDir "app.js" in
                      [Rule.simple ~targets:[topOutputPath]
                         ~deps:[Dep.path cmaPath;
                               Dep.path
@@ -463,10 +463,8 @@ let scheme ~dir  =
           ~nodeModulesRoot ~dir ~root ~libName:topLibName;
        Scheme.rules
          [Rule.default ~dir
-            [Dep.path
-               (rel ~dir:(rel ~dir:buildDirRoot topLibName) "output.out");
-            Dep.path
-              (rel ~dir:(rel ~dir:buildDirRoot topLibName) "output.js");
+            [Dep.path (rel ~dir:(rel ~dir:buildDirRoot topLibName) "app.out");
+            Dep.path (rel ~dir:(rel ~dir:buildDirRoot topLibName) "app.js");
             Dep.path (rel ~dir:root ".merlin")]];
        dotMerlinScheme])
   else

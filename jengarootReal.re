@@ -1,3 +1,7 @@
+/*
+ * vim: set ft=rust:
+ * vim: set ft=reason:
+ */
 open Core.Std;
 
 open Async.Std;
@@ -528,8 +532,8 @@ let compileLibScheme
             /* exec output and jsoo output */
             let finalOutputRules =
               if isTopLevelLib {
-                let topOutputPath = rel dir::buildDir "output.out";
-                let topOutputPathJsoo = rel dir::buildDir "output.js";
+                let topOutputPath = rel dir::buildDir "app.out";
+                let topOutputPathJsoo = rel dir::buildDir "app.js";
                 [
                   /* ocamlc -g -o _build/hi/entry.out _build/hi/lib.cma _build/hi/hi__main.cmo */
                   Rule.simple
@@ -637,8 +641,8 @@ let scheme dir::dir => {
         Rule.default
           dir::dir
           [
-            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "output.out"),
-            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "output.js"),
+            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "app.out"),
+            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "app.js"),
             Dep.path (rel dir::root ".merlin")
           ]
       ],
