@@ -46,6 +46,7 @@ let tapAssocList n a =
 let _ = tapAssocList
 let topLibName = "top"
 let finalOutputName = "app"
+let libraryFileName = "lib.cma"
 let nodeModulesRoot = rel ~dir:root "node_modules"
 let buildDirRoot = rel ~dir:root "_build"
 let topSrcDir = rel ~dir:root "src"
@@ -134,8 +135,7 @@ let topologicalSort ~mainNode  assocListGraph =
    let accum = { contents = [] } in
    topologicalSort' mainNode assocListGraph accum; List.rev accum.contents)
 let _ = topologicalSort
-let sortTransitiveThirdParties ~topLibName  ~nodeModulesRoot  ~buildDirRoot 
-  =
+let sortTransitiveThirdParties ~topLibName  =
   ignore nodeModulesRoot;
   ignore buildDirRoot;
   (getThirdPartyDepsForLib ~srcDir:topSrcDir) *>>=
@@ -157,7 +157,6 @@ let sortTransitiveThirdParties ~topLibName  ~nodeModulesRoot  ~buildDirRoot
                  (topThirdPartyDeps :: thirdPartiesThirdPartyDeps))
                 |> (topologicalSort ~mainNode:topLibModuleName))
                |> (List.filter ~f:(fun m  -> m <> topLibModuleName)))))
-let _ = sortTransitiveThirdParties
 let sortPathsTopologically ~buildDirRoot  ~libName  ~dir  ~paths  =
   ignore buildDirRoot;
   ignore libName;
@@ -179,9 +178,9 @@ let _ = sortPathsTopologically
 let moduleAliasFileScheme ~buildDir  ~sourceModules  ~libName  =
   let name extension = rel ~dir:buildDir (libName ^ ("." ^ extension)) in
   let sourcePath = name "re" in
-  let cmoPath = name "cmo" in
-  let cmiPath = name "cmi" in
-  let cmtPath = name "cmt" in
+  let cmo = name "cmo" in
+  let cmi = name "cmi" in
+  let cmt = name "cmt" in
   let fileContent =
     (List.map sourceModules
        ~f:(fun moduleName  ->
@@ -192,15 +191,63 @@ let moduleAliasFileScheme ~buildDir  ~sourceModules  ~libName  =
     Rule.create ~targets:[sourcePath]
       (Dep.return (Action.save fileContent ~target:sourcePath)) in
   let compileRule =
-    Rule.create ~targets:[cmoPath; cmiPath; cmtPath]
+    Rule.create ~targets:[cmo; cmi; cmt]
       ((Dep.path sourcePath) *>>|
          (fun ()  ->
             bashf ~dir:buildDir
               "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
-              (Path.basename sourcePath) (Path.basename cmoPath))) in
+              (Path.basename sourcePath) (Path.basename cmo))) in
   Scheme.rules [contentRule; compileRule]
+let jsooLocationD =
+  (Dep.action_stdout
+     (Dep.return (bash ~dir:root "ocamlfind query js_of_ocaml")))
+    *>>| String.strip
+let compileCmaScheme ~sortedSourcePaths  ~libName  ~isTopLevelLib  ~buildDir 
+  =
+  let cmaPath = rel ~dir:buildDir libraryFileName in
+  let moduleAliasCmoPath = rel ~dir:buildDir (libName ^ ".cmo") in
+  let cmos =
+    List.map sortedSourcePaths
+      ~f:(fun path  ->
+            rel ~dir:buildDir
+              (libName ^ ("__" ^ ((fileNameNoExtNoDir path) ^ ".cmo")))) in
+  let cmosString =
+    (List.map cmos ~f:Path.basename) |> (String.concat ~sep:" ") in
+  if isTopLevelLib
+  then
+    Scheme.dep
+      ((Dep.both jsooLocationD
+          (sortTransitiveThirdParties ~topLibName:libName))
+         *>>|
+         (fun (jsooLocation,thirdPartyTransitiveDeps)  ->
+            let transitiveCmaPaths =
+              List.map thirdPartyTransitiveDeps
+                ~f:(fun dep  ->
+                      rel
+                        ~dir:(rel ~dir:buildDirRoot (String.uncapitalize dep))
+                        libraryFileName) in
+            Scheme.rules
+              [Rule.simple ~targets:[cmaPath]
+                 ~deps:(([moduleAliasCmoPath] @ (cmos @ transitiveCmaPaths))
+                          |> (List.map ~f:Dep.path))
+                 ~action:(bashf ~dir:buildDir
+                            "ocamlc -g -I %s %s/js_of_ocaml.cma -open %s -a -o %s %s %s %s"
+                            jsooLocation jsooLocation
+                            (String.capitalize libName)
+                            (Path.basename cmaPath)
+                            ((transitiveCmaPaths |>
+                                (List.map ~f:(Path.reach_from ~dir:buildDir)))
+                               |> (String.concat ~sep:" "))
+                            (Path.basename moduleAliasCmoPath) cmosString)]))
+  else
+    Scheme.rules
+      [Rule.simple ~targets:[cmaPath]
+         ~deps:(List.map (moduleAliasCmoPath :: cmos) ~f:Dep.path)
+         ~action:(bashf ~dir:buildDir "ocamlc -g -open %s -a -o %s %s %s"
+                    (String.capitalize libName) (Path.basename cmaPath)
+                    (Path.basename moduleAliasCmoPath) cmosString)]
 let finalOutputsScheme ~topBuildDir  =
-  let cmaPath = rel ~dir:topBuildDir "lib.cma" in
+  let cmaPath = rel ~dir:topBuildDir libraryFileName in
   let binaryPath = rel ~dir:topBuildDir (finalOutputName ^ ".out") in
   let jsooPath = rel ~dir:topBuildDir (finalOutputName ^ ".js") in
   Scheme.rules
@@ -351,62 +398,7 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                                 outNameNoExtNoDir
                                                 (Path.reach_from
                                                    ~dir:buildDir path))))))) in
-                 let cmos =
-                   List.map sortedPaths
-                     ~f:(fun path  ->
-                           let outNameNoExtNoDir =
-                             libName ^ ("__" ^ (fileNameNoExtNoDir path)) in
-                           rel ~dir:buildDir (outNameNoExtNoDir ^ ".cmo")) in
-                 let cmaPath = rel ~dir:buildDir "lib.cma" in
-                 let cmaCompileRulesScheme =
-                   if isTopLevelLib
-                   then
-                     Scheme.dep @@
-                       ((sortTransitiveThirdParties ~topLibName:libName
-                           ~nodeModulesRoot ~buildDirRoot)
-                          *>>|
-                          (fun thirdPartyTransitiveModules  ->
-                             let transitiveCmaPaths =
-                               List.map thirdPartyTransitiveModules
-                                 ~f:(fun t  ->
-                                       rel
-                                         ~dir:(rel ~dir:buildDirRoot
-                                                 (String.uncapitalize t))
-                                         "lib.cma") in
-                             Scheme.rules
-                               [Rule.simple
-                                  ~targets:[rel ~dir:buildDir "lib.cma"]
-                                  ~deps:([Dep.path moduleAliasCmoPath] @
-                                           ((List.map cmos ~f:Dep.path) @
-                                              (List.map transitiveCmaPaths
-                                                 ~f:Dep.path)))
-                                  ~action:(bashf ~dir:buildDir
-                                             "ocamlc -g -I `ocamlfind query js_of_ocaml` `ocamlfind query js_of_ocaml`/js_of_ocaml.cma -open %s -a -o %s %s %s %s"
-                                             (String.capitalize libName)
-                                             (Path.basename cmaPath)
-                                             (((taplp 1 transitiveCmaPaths)
-                                                 |>
-                                                 (List.map
-                                                    ~f:(Path.reach_from
-                                                          ~dir:buildDir)))
-                                                |> (String.concat ~sep:" "))
-                                             (Path.basename
-                                                moduleAliasCmoPath)
-                                             ((List.map cmos ~f:Path.basename)
-                                                |> (String.concat ~sep:" ")))]))
-                   else
-                     Scheme.rules
-                       [Rule.simple ~targets:[rel ~dir:buildDir "lib.cma"]
-                          ~deps:((Dep.path moduleAliasCmoPath) ::
-                          (List.map cmos ~f:Dep.path))
-                          ~action:(bashf ~dir:buildDir
-                                     "ocamlc -g -open %s -a -o %s %s %s"
-                                     (String.capitalize libName)
-                                     (Path.basename cmaPath)
-                                     (Path.basename moduleAliasCmoPath)
-                                     ((List.map cmos ~f:Path.basename) |>
-                                        (String.concat ~sep:" ")))] in
-                 let finalOutputsRules =
+                 let finalOutputsScheme =
                    match isTopLevelLib with
                    | true  -> finalOutputsScheme ~topBuildDir:buildDir
                    | false  -> Scheme.no_rules in
@@ -415,8 +407,9 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                       ~sourceModules:(List.map unsortedPaths
                                         ~f:fileNameNoExtNoDir);
                    sourcesCompileRules;
-                   cmaCompileRulesScheme;
-                   finalOutputsRules])))))
+                   compileCmaScheme ~buildDir ~isTopLevelLib ~libName
+                     ~sortedSourcePaths:sortedPaths;
+                   finalOutputsScheme])))))
 let generateDotMerlinScheme ~nodeModulesRoot  ~buildDirRoot  ~isTopLevelLib 
   ~libName  ~dir  ~root  =
   ignore nodeModulesRoot;
