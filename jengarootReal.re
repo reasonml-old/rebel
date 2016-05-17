@@ -209,17 +209,17 @@ let topologicalSort graph => {
   List.rev accum.contents
 };
 
-let sortTransitiveThirdParties = getThirdPartyDepsForLib srcDir::topSrcDir *>>= (
-  fun topThirdPartyDeps => {
-    let thirdPartiesSrcDirs =
-      List.map
-        topThirdPartyDeps
-        f::(fun dep => rel dir::(rel dir::nodeModulesRoot (String.uncapitalize dep)) "src");
+let sortTransitiveThirdParties = Dep.subdirs dir::nodeModulesRoot *>>= (
+  fun thirdPartyRoots => {
+    let thirdPartySrcDirs = List.map thirdPartyRoots f::(fun r => rel dir::r "src");
     let thirdPartiesThirdPartyDepsD = Dep.all (
-      List.map thirdPartiesSrcDirs f::(fun srcDir => getThirdPartyDepsForLib srcDir::srcDir)
+      List.map thirdPartySrcDirs f::(fun srcDir => getThirdPartyDepsForLib srcDir::srcDir)
     );
     thirdPartiesThirdPartyDepsD *>>| (
-      fun thirdPartiesThirdPartyDeps => List.zip_exn topThirdPartyDeps thirdPartiesThirdPartyDeps |> topologicalSort
+      fun thirdPartiesThirdPartyDeps =>
+        List.zip_exn
+          (List.map thirdPartyRoots f::(fun a => Path.basename a |> String.capitalize))
+          thirdPartiesThirdPartyDeps |> topologicalSort
     )
   }
 );
@@ -649,14 +649,10 @@ let scheme dir::dir => {
      generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
   if (dir == root) {
     let dotMerlinDefaultScheme = Scheme.rules_dep (
-      getThirdPartyDepsForLib srcDir::topSrcDir *>>| (
-        fun deps => {
-          let thirdPartyNodeModulesRoots =
-            List.map deps f::(fun dep => rel dir::nodeModulesRoot (String.uncapitalize dep));
+      Dep.subdirs dir::nodeModulesRoot *>>| (
+        fun thirdPartyRoots =>
           List.map
-            thirdPartyNodeModulesRoots
-            f::(fun path => Rule.default dir::dir [relD dir::path ".merlin"])
-        }
+            thirdPartyRoots f::(fun path => Rule.default dir::dir [relD dir::path ".merlin"])
       )
     );
     Scheme.all [

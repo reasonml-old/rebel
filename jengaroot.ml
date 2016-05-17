@@ -129,22 +129,21 @@ let topologicalSort graph =
      topologicalSort' (fst (List.hd_exn graph.contents)) accum done;
    List.rev accum.contents)
 let sortTransitiveThirdParties =
-  (getThirdPartyDepsForLib ~srcDir:topSrcDir) *>>=
-    (fun topThirdPartyDeps  ->
-       let thirdPartiesSrcDirs =
-         List.map topThirdPartyDeps
-           ~f:(fun dep  ->
-                 rel
-                   ~dir:(rel ~dir:nodeModulesRoot (String.uncapitalize dep))
-                   "src") in
+  (Dep.subdirs ~dir:nodeModulesRoot) *>>=
+    (fun thirdPartyRoots  ->
+       let thirdPartySrcDirs =
+         List.map thirdPartyRoots ~f:(fun r  -> rel ~dir:r "src") in
        let thirdPartiesThirdPartyDepsD =
          Dep.all
-           (List.map thirdPartiesSrcDirs
+           (List.map thirdPartySrcDirs
               ~f:(fun srcDir  -> getThirdPartyDepsForLib ~srcDir)) in
        thirdPartiesThirdPartyDepsD *>>|
          (fun thirdPartiesThirdPartyDeps  ->
-            (List.zip_exn topThirdPartyDeps thirdPartiesThirdPartyDeps) |>
-              topologicalSort))
+            (List.zip_exn
+               (List.map thirdPartyRoots
+                  ~f:(fun a  -> (Path.basename a) |> String.capitalize))
+               thirdPartiesThirdPartyDeps)
+              |> topologicalSort))
 let sortPathsTopologically ~dir  ~paths  =
   (Dep.action_stdout
      ((Dep.all_unit (List.map paths ~f:Dep.path)) *>>|
@@ -380,13 +379,9 @@ let scheme ~dir  =
   then
     (let dotMerlinDefaultScheme =
        Scheme.rules_dep
-         ((getThirdPartyDepsForLib ~srcDir:topSrcDir) *>>|
-            (fun deps  ->
-               let thirdPartyNodeModulesRoots =
-                 List.map deps
-                   ~f:(fun dep  ->
-                         rel ~dir:nodeModulesRoot (String.uncapitalize dep)) in
-               List.map thirdPartyNodeModulesRoots
+         ((Dep.subdirs ~dir:nodeModulesRoot) *>>|
+            (fun thirdPartyRoots  ->
+               List.map thirdPartyRoots
                  ~f:(fun path  ->
                        Rule.default ~dir [relD ~dir:path ".merlin"]))) in
      Scheme.all
