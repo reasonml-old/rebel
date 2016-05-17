@@ -653,50 +653,60 @@ let compileLibScheme
   )
 };
 
-let generateDotMerlinScheme
-    nodeModulesRoot::nodeModulesRoot
-    buildDirRoot::buildDirRoot
-    isTopLevelLib::isTopLevelLib
-    libName::libName
-    dir::dir
-    root::root => {
-  ignore nodeModulesRoot;
-  ignore buildDirRoot;
-  ignore isTopLevelLib;
-  ignore libName;
-  ignore dir;
-  ignore root;
+/* See comment in the `sprintf` */
+let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir => {
   let dotMerlinContent =
     Printf.sprintf
-      {|%s
+      {|# [merlin](https://github.com/the-lambda-church/merlin) is a static analyser for
+# OCaml that provides autocompletion, jump-to-location, recoverable syntax
+# errors, type errors detection, etc., that your editor can use. To activate it,
+# one usually provides a .merlin file at the root of a project, describing where
+# the sources and artifacts are. Since we dictated the project structure, we can
+# auto generate .merlin files!
+
+# S is the merlin flag for source files
+%s
+
+# Include all the third-party sources too.
 S %s
+
+# B stands for build (artifacts). We generate ours into _build
 
 B %s
 
+# PKG lists packages found through ocamlfind (findlib), a utility for finding
+# the location of third-party dependencies. For us, all third-party deps reside
+# in `node_modules/`. One of the exceptions being js_of_ocaml. So we pass it to
+# PKG here and let ocamlfind find its source instead.
 PKG js_of_ocaml
 
+# FLG is the set of flags to pass to Merlin, as if it used ocamlc to compile and
+# understand our sources. You don't have to understand what these flags are for
+# now; but if you're curious, go check the jengaroot.ml that generated this
+# .merlin.
 FLG -w -30 -w -40 -open %s
 |}
       (isTopLevelLib ? "S src" : "")
       (Path.reach_from dir::dir (rel dir::nodeModulesRoot "**/src"))
       (Path.reach_from dir::dir (rel dir::buildDirRoot "*"))
       (String.capitalize libName);
+  let dotMerlinPath = rel dir::dir ".merlin";
   Scheme.rules [
     Rule.simple
-      targets::[rel dir::dir ".merlin"]
+      targets::[dotMerlinPath]
       deps::[]
-      action::(Action.save dotMerlinContent target::(rel dir::dir ".merlin"))
+      action::(Action.save dotMerlinContent target::dotMerlinPath)
   ]
 };
 
 let scheme dir::dir => {
   ignore dir;
-  /* print_endline @@ (ts dir ^ "<<<<<<<<<<<<<<<"); */
-  /* all the third party .merlin files, generated into their own node_modules/bla dir. We're making an
-     exception here to generate artifact into somewhere else than _build/. Maybe one day merlin will
-     support our dir structure */
+  /* We generate many .merlin files, one per third-party library (and on at the top). Additionally, this is
+     the only case where we generate some artifacts outside of _build/. Most of this is so that Merlin's
+     jump-to-location could work correctly when we jump into a third-party source file. As to why exactly we
+     generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
   if (dir == root) {
-    let dotMerlinScheme = Scheme.rules_dep (
+    let dotMerlinDefaultScheme = Scheme.rules_dep (
       getThirdPartyDepsForLib srcDir::topSrcDir *>>| (
         fun deps => {
           let thirdPartyNodeModulesRoots =
@@ -708,13 +718,7 @@ let scheme dir::dir => {
       )
     );
     Scheme.all [
-      generateDotMerlinScheme
-        buildDirRoot::buildDirRoot
-        isTopLevelLib::true
-        nodeModulesRoot::nodeModulesRoot
-        dir::dir
-        root::root
-        libName::topLibName,
+      dotMerlinScheme isTopLevelLib::true dir::dir libName::topLibName,
       Scheme.rules [
         Rule.default
           dir::dir
@@ -724,18 +728,14 @@ let scheme dir::dir => {
             Dep.path (rel dir::root ".merlin")
           ]
       ],
-      dotMerlinScheme
+      dotMerlinDefaultScheme
     ]
   } else if (
     Path.is_descendant dir::buildDirRoot dir
   ) {
     let libName = Path.basename dir;
     let srcDir =
-      if (libName == topLibName) {
-        topSrcDir
-      } else {
-        rel dir::(rel dir::nodeModulesRoot libName) "src"
-      };
+      libName == topLibName ? topSrcDir : rel dir::(rel dir::nodeModulesRoot libName) "src";
     compileLibScheme
       srcDir::srcDir
       isTopLevelLib::(libName == topLibName)
@@ -747,13 +747,7 @@ let scheme dir::dir => {
     Path.dirname dir == nodeModulesRoot
   ) {
     let libName = Path.basename dir;
-    generateDotMerlinScheme
-      buildDirRoot::buildDirRoot
-      isTopLevelLib::false
-      nodeModulesRoot::nodeModulesRoot
-      dir::dir
-      root::root
-      libName::libName
+    dotMerlinScheme isTopLevelLib::false dir::dir libName::libName
   } else {
     Scheme.no_rules
   }

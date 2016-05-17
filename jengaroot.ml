@@ -410,37 +410,51 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                    compileCmaScheme ~buildDir ~isTopLevelLib ~libName
                      ~sortedSourcePaths:sortedPaths;
                    finalOutputsScheme])))))
-let generateDotMerlinScheme ~nodeModulesRoot  ~buildDirRoot  ~isTopLevelLib 
-  ~libName  ~dir  ~root  =
-  ignore nodeModulesRoot;
-  ignore buildDirRoot;
-  ignore isTopLevelLib;
-  ignore libName;
-  ignore dir;
-  ignore root;
-  (let dotMerlinContent =
-     Printf.sprintf
-       {|%s
+let dotMerlinScheme ~isTopLevelLib  ~libName  ~dir  =
+  let dotMerlinContent =
+    Printf.sprintf
+      {|# [merlin](https://github.com/the-lambda-church/merlin) is a static analyser for
+# OCaml that provides autocompletion, jump-to-location, recoverable syntax
+# errors, type errors detection, etc., that your editor can use. To activate it,
+# one usually provides a .merlin file at the root of a project, describing where
+# the sources and artifacts are. Since we dictated the project structure, we can
+# auto generate .merlin files!
+
+# S is the merlin flag for source files
+%s
+
+# Include all the third-party sources too.
 S %s
+
+# B stands for build (artifacts). We generate ours into _build
 
 B %s
 
+# PKG lists packages found through ocamlfind (findlib), a utility for finding
+# the location of third-party dependencies. For us, all third-party deps reside
+# in `node_modules/`. One of the exceptions being js_of_ocaml. So we pass it to
+# PKG here and let ocamlfind find its source instead.
 PKG js_of_ocaml
 
+# FLG is the set of flags to pass to Merlin, as if it used ocamlc to compile and
+# understand our sources. You don't have to understand what these flags are for
+# now; but if you're curious, go check the jengaroot.ml that generated this
+# .merlin.
 FLG -w -30 -w -40 -open %s
 |}
-       (match isTopLevelLib with | true  -> "S src" | false  -> "")
-       (Path.reach_from ~dir (rel ~dir:nodeModulesRoot "**/src"))
-       (Path.reach_from ~dir (rel ~dir:buildDirRoot "*"))
-       (String.capitalize libName) in
-   Scheme.rules
-     [Rule.simple ~targets:[rel ~dir ".merlin"] ~deps:[]
-        ~action:(Action.save dotMerlinContent ~target:(rel ~dir ".merlin"))])
+      (match isTopLevelLib with | true  -> "S src" | false  -> "")
+      (Path.reach_from ~dir (rel ~dir:nodeModulesRoot "**/src"))
+      (Path.reach_from ~dir (rel ~dir:buildDirRoot "*"))
+      (String.capitalize libName) in
+  let dotMerlinPath = rel ~dir ".merlin" in
+  Scheme.rules
+    [Rule.simple ~targets:[dotMerlinPath] ~deps:[]
+       ~action:(Action.save dotMerlinContent ~target:dotMerlinPath)]
 let scheme ~dir  =
   ignore dir;
   if dir = root
   then
-    (let dotMerlinScheme =
+    (let dotMerlinDefaultScheme =
        Scheme.rules_dep
          ((getThirdPartyDepsForLib ~srcDir:topSrcDir) *>>|
             (fun deps  ->
@@ -452,8 +466,7 @@ let scheme ~dir  =
                  ~f:(fun path  ->
                        Rule.default ~dir [Dep.path (rel ~dir:path ".merlin")]))) in
      Scheme.all
-       [generateDotMerlinScheme ~buildDirRoot ~isTopLevelLib:true
-          ~nodeModulesRoot ~dir ~root ~libName:topLibName;
+       [dotMerlinScheme ~isTopLevelLib:true ~dir ~libName:topLibName;
        Scheme.rules
          [Rule.default ~dir
             [Dep.path
@@ -463,15 +476,15 @@ let scheme ~dir  =
               (rel ~dir:(rel ~dir:buildDirRoot topLibName)
                  (finalOutputName ^ ".js"));
             Dep.path (rel ~dir:root ".merlin")]];
-       dotMerlinScheme])
+       dotMerlinDefaultScheme])
   else
     if Path.is_descendant ~dir:buildDirRoot dir
     then
       (let libName = Path.basename dir in
        let srcDir =
-         if libName = topLibName
-         then topSrcDir
-         else rel ~dir:(rel ~dir:nodeModulesRoot libName) "src" in
+         match libName = topLibName with
+         | true  -> topSrcDir
+         | false  -> rel ~dir:(rel ~dir:nodeModulesRoot libName) "src" in
        compileLibScheme ~srcDir ~isTopLevelLib:(libName = topLibName)
          ~libName ~buildDir:(rel ~dir:buildDirRoot libName) ~buildDirRoot
          ~nodeModulesRoot)
@@ -479,8 +492,7 @@ let scheme ~dir  =
       if (Path.dirname dir) = nodeModulesRoot
       then
         (let libName = Path.basename dir in
-         generateDotMerlinScheme ~buildDirRoot ~isTopLevelLib:false
-           ~nodeModulesRoot ~dir ~root ~libName)
+         dotMerlinScheme ~isTopLevelLib:false ~dir ~libName)
       else Scheme.no_rules
 let env = Env.create scheme
 let setup () = Deferred.return env
