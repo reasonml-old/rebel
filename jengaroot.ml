@@ -13,7 +13,6 @@ let nonBlank s = match String.strip s with | "" -> false | _ -> true
 let relD ~dir  str = Dep.path (rel ~dir str)
 let chopSuffixExn str = String.slice str 0 (String.rindex_exn str '.')
 let fileNameNoExtNoDir path = (Path.basename path) |> chopSuffixExn
-let _ = fileNameNoExtNoDir
 let tap n a =
   if n = 0 then (print_endline "tap---------"; print_endline a; a) else a
 let _ = tap
@@ -82,19 +81,18 @@ let ocamlDepModules ~sourcePath  =
                     |> (String.split ~on:':')
             with
             | original::deps::[] ->
-                (((((String.split deps ~on:' ') |> (List.filter ~f:nonBlank))
-                     |> (List.map ~f:chopSuffixExn))
-                    |>
-                    (List.filter ~f:(fun m  -> m <> (chopSuffixExn original))))
+                ((((String.split deps ~on:' ') |> (List.filter ~f:nonBlank))
+                    |> (List.map ~f:chopSuffixExn))
                    |>
-                   (List.map
-                      ~f:(fun m  ->
-                            match String.rindex m '/' with
-                            | None  -> m
-                            | ((Some (idx))) ->
-                                (String.slice m (idx + 1) (String.length m))
-                                  |> String.capitalize)))
-                  |> (tapl 1)
+                   (List.filter ~f:(fun m  -> m <> (chopSuffixExn original))))
+                  |>
+                  (List.map
+                     ~f:(fun m  ->
+                           match String.rindex m '/' with
+                           | None  -> m
+                           | ((Some (idx))) ->
+                               (String.slice m (idx + 1) (String.length m))
+                                 |> String.capitalize))
             | _ ->
                 failwith "expected exactly one ':' in ocamldep output line"))
 let _ = ocamlDepModules
@@ -126,32 +124,27 @@ let topologicalSort ~mainNode  assocListGraph =
      then accum := (currNode :: (accum.contents)) in
    let accum = { contents = [] } in
    topologicalSort' mainNode assocListGraph accum; List.rev accum.contents)
-let _ = topologicalSort
 let sortTransitiveThirdParties ~topLibName  =
-  ignore nodeModulesRoot;
-  ignore buildDirRoot;
   (getThirdPartyDepsForLib ~srcDir:topSrcDir) *>>=
-    ((fun topThirdPartyDeps  ->
-        let thirdPartiesSrcDirs =
-          List.map topThirdPartyDeps
-            ~f:(fun dep  ->
-                  rel
-                    ~dir:(rel ~dir:nodeModulesRoot (String.uncapitalize dep))
-                    "src") in
-        let thirdPartiesThirdPartyDepsD =
-          Dep.all
-            (List.map thirdPartiesSrcDirs
-               ~f:(fun srcDir  -> getThirdPartyDepsForLib ~srcDir)) in
-        let topLibModuleName = String.capitalize topLibName in
-        thirdPartiesThirdPartyDepsD *>>|
-          (fun thirdPartiesThirdPartyDeps  ->
-             ((List.zip_exn (topLibModuleName :: topThirdPartyDeps)
-                 (topThirdPartyDeps :: thirdPartiesThirdPartyDeps))
-                |> (topologicalSort ~mainNode:topLibModuleName))
-               |> (List.filter ~f:(fun m  -> m <> topLibModuleName)))))
-let sortPathsTopologically ~buildDirRoot  ~libName  ~dir  ~paths  =
-  ignore buildDirRoot;
-  ignore libName;
+    (fun topThirdPartyDeps  ->
+       let thirdPartiesSrcDirs =
+         List.map topThirdPartyDeps
+           ~f:(fun dep  ->
+                 rel
+                   ~dir:(rel ~dir:nodeModulesRoot (String.uncapitalize dep))
+                   "src") in
+       let thirdPartiesThirdPartyDepsD =
+         Dep.all
+           (List.map thirdPartiesSrcDirs
+              ~f:(fun srcDir  -> getThirdPartyDepsForLib ~srcDir)) in
+       let topLibModuleName = String.capitalize topLibName in
+       thirdPartiesThirdPartyDepsD *>>|
+         (fun thirdPartiesThirdPartyDeps  ->
+            ((List.zip_exn (topLibModuleName :: topThirdPartyDeps)
+                (topThirdPartyDeps :: thirdPartiesThirdPartyDeps))
+               |> (topologicalSort ~mainNode:topLibModuleName))
+              |> (List.filter ~f:(fun m  -> m <> topLibModuleName))))
+let sortPathsTopologically ~dir  ~paths  =
   (Dep.action_stdout
      ((Dep.all_unit (List.map paths ~f:Dep.path)) *>>|
         (fun ()  ->
@@ -162,11 +155,10 @@ let sortPathsTopologically ~buildDirRoot  ~libName  ~dir  ~paths  =
              "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -sort -one-line %s"
              (tap 1 pathsString))))
     *>>|
-    ((fun string  ->
-        (((String.split string ~on:' ') |> (List.filter ~f:nonBlank)) |>
-           (List.map ~f:(rel ~dir)))
-          |> (taplp 1)))
-let _ = sortPathsTopologically
+    (fun string  ->
+       (((String.split string ~on:' ') |> (List.filter ~f:nonBlank)) |>
+          (List.map ~f:(rel ~dir)))
+         |> (taplp 1))
 let moduleAliasFileScheme ~buildDir  ~sourceModules  ~libName  =
   let name extension = rel ~dir:buildDir (libName ^ ("." ^ extension)) in
   let sourcePath = name "re" in
@@ -260,8 +252,9 @@ let compileSourcesScheme ~buildDir  ~libName  ~sourcePaths  =
                            ((List.map thirdPartyModules
                                ~f:(fun m  ->
                                      "-I " ^
-                                       ((rel ~dir:buildDirRoot m) |>
-                                          (Path.reach_from ~dir:buildDir))))
+                                       (((String.uncapitalize m) |>
+                                           (rel ~dir:buildDirRoot))
+                                          |> (Path.reach_from ~dir:buildDir))))
                               |> (String.concat ~sep:" ")) outNameNoExtNoDir
                            (Path.reach_from ~dir:buildDir path)))) in
           Scheme.rules_dep
@@ -325,19 +318,12 @@ let finalOutputsScheme ~topBuildDir  =
       ~action:(bashf ~dir:topBuildDir
                  "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
                  (Path.basename binaryPath))]
-let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir 
-  ~buildDirRoot  =
+let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir  =
   Scheme.dep
     ((Dep.glob_listing (Glob.create ~dir:srcDir "*.re")) *>>=
        (fun unsortedPaths  ->
-          (sortPathsTopologically ~buildDirRoot ~libName ~dir:srcDir
-             ~paths:unsortedPaths)
-            *>>|
+          (sortPathsTopologically ~dir:srcDir ~paths:unsortedPaths) *>>|
             (fun sortedPaths  ->
-               let finalOutputsScheme =
-                 match isTopLevelLib with
-                 | true  -> finalOutputsScheme ~topBuildDir:buildDir
-                 | false  -> Scheme.no_rules in
                Scheme.all
                  [moduleAliasFileScheme ~buildDir ~libName
                     ~sourceModules:(List.map unsortedPaths
@@ -346,7 +332,9 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                    ~sourcePaths:unsortedPaths;
                  compileCmaScheme ~buildDir ~isTopLevelLib ~libName
                    ~sortedSourcePaths:sortedPaths;
-                 finalOutputsScheme])))
+                 (match isTopLevelLib with
+                  | true  -> finalOutputsScheme ~topBuildDir:buildDir
+                  | false  -> Scheme.no_rules)])))
 let dotMerlinScheme ~isTopLevelLib  ~libName  ~dir  =
   let dotMerlinContent =
     Printf.sprintf
@@ -421,7 +409,7 @@ let scheme ~dir  =
          | true  -> topSrcDir
          | false  -> rel ~dir:(rel ~dir:nodeModulesRoot libName) "src" in
        compileLibScheme ~srcDir ~isTopLevelLib:(libName = topLibName)
-         ~libName ~buildDir:(rel ~dir:buildDirRoot libName) ~buildDirRoot)
+         ~libName ~buildDir:(rel ~dir:buildDirRoot libName))
     else
       if (Path.dirname dir) = nodeModulesRoot
       then

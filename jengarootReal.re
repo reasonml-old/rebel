@@ -37,8 +37,6 @@ let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
 
 let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
 
-fileNameNoExtNoDir;
-
 /* generic testing/logging helpers */
 let tap n a =>
   if (n == 0) {
@@ -109,12 +107,9 @@ let buildDirRoot = rel dir::root "_build";
 
 let topSrcDir = rel dir::root "src";
 
-/* let allThirdPartyDeps = Dep.subdirs dir::nodeModulesRoot *>>| (
-     fun paths =>
-       List.map paths f::(fun path => fileNameNoExtNoDir  path |> String.uppercase)
-   );
-
-   allThirdPartyDeps; */
+/* Wrapper around the ocamldep CLI which gives us back the modules a file depends on. However, the
+   implementation isn't perfect. Notably, if we have: `open Foo; let a = Bar.x;` we might have a false
+   positive `Bar` when it's really from Foo.Bar */
 let ocamlDepModules sourcePath::sourcePath => Dep.subdirs dir::nodeModulesRoot *>>= (
   fun subdirs => {
     let execDir = Path.dirname sourcePath;
@@ -126,6 +121,7 @@ let ocamlDepModules sourcePath::sourcePath => Dep.subdirs dir::nodeModulesRoot *
         Dep.all_unit (
           List.map
             thirdPartyBuildRoots
+            /* We depend on the module alias file of the third-party libraries being compiled. */
             f::(fun buildRoot => relD dir::buildRoot (Path.basename buildRoot ^ ".cmi"))
         )
       ]
@@ -154,7 +150,8 @@ let ocamlDepModules sourcePath::sourcePath => Dep.subdirs dir::nodeModulesRoot *
             List.map f::chopSuffixExn |>
             /* TODO: mother of all fragile logic. */
             /* node_modules/bookshop/src/Index.cmo : node_modules/bookshop/src/Index.cmi */
-            /* ^ this means that there's a rei interface file for it. Filter it out */
+            /* ^ this means that there's a rei interface file for it. Doesn't mean much else, and definitely
+               doesn't mean we're using Index inside Index. Filter it out */
             List.filter f::(fun m => m != chopSuffixExn original) |>
             /* TODO: fragile logic. The result might be ../_build/bookshop/bookshop.cmo so this is how we
                temporarily detect it */
@@ -165,8 +162,7 @@ let ocamlDepModules sourcePath::sourcePath => Dep.subdirs dir::nodeModulesRoot *
                   | None => m
                   | Some idx => String.slice m (idx + 1) (String.length m) |> String.capitalize
                   }
-              ) |>
-            tapl 1
+              )
         | _ => failwith "expected exactly one ':' in ocamldep output line"
         }
     )
@@ -211,37 +207,29 @@ let topologicalSort mainNode::mainNode assocListGraph => {
   List.rev accum.contents
 };
 
-topologicalSort;
+let sortTransitiveThirdParties topLibName::topLibName => getThirdPartyDepsForLib srcDir::topSrcDir *>>= (
+  fun topThirdPartyDeps => {
+    let thirdPartiesSrcDirs =
+      List.map
+        topThirdPartyDeps
+        f::(fun dep => rel dir::(rel dir::nodeModulesRoot (String.uncapitalize dep)) "src");
+    let thirdPartiesThirdPartyDepsD = Dep.all (
+      List.map thirdPartiesSrcDirs f::(fun srcDir => getThirdPartyDepsForLib srcDir::srcDir)
+    );
+    let topLibModuleName = String.capitalize topLibName;
+    thirdPartiesThirdPartyDepsD *>>| (
+      fun thirdPartiesThirdPartyDeps =>
+        List.zip_exn
+          [topLibModuleName, ...topThirdPartyDeps]
+          [topThirdPartyDeps, ...thirdPartiesThirdPartyDeps] |>
+          topologicalSort mainNode::topLibModuleName |>
+          /* remove the top lib node itself from the sorted result */
+          List.filter f::(fun m => m != topLibModuleName)
+    )
+  }
+);
 
-let sortTransitiveThirdParties topLibName::topLibName => {
-  ignore nodeModulesRoot;
-  ignore buildDirRoot;
-  getThirdPartyDepsForLib srcDir::topSrcDir *>>= (
-    fun topThirdPartyDeps => {
-      let thirdPartiesSrcDirs =
-        List.map
-          topThirdPartyDeps
-          f::(fun dep => rel dir::(rel dir::nodeModulesRoot (String.uncapitalize dep)) "src");
-      let thirdPartiesThirdPartyDepsD = Dep.all (
-        List.map thirdPartiesSrcDirs f::(fun srcDir => getThirdPartyDepsForLib srcDir::srcDir)
-      );
-      let topLibModuleName = String.capitalize topLibName;
-      thirdPartiesThirdPartyDepsD *>>| (
-        fun thirdPartiesThirdPartyDeps =>
-          List.zip_exn
-            [topLibModuleName, ...topThirdPartyDeps]
-            [topThirdPartyDeps, ...thirdPartiesThirdPartyDeps] |>
-            topologicalSort mainNode::topLibModuleName |>
-            /* remove the top lib node itself from the sorted result */
-            List.filter f::(fun m => m != topLibModuleName)
-      )
-    }
-  )
-};
-
-let sortPathsTopologically buildDirRoot::buildDirRoot libName::libName dir::dir paths::paths => {
-  ignore buildDirRoot;
-  ignore libName;
+let sortPathsTopologically dir::dir paths::paths =>
   /* don't remove this piece of code! This is the `ocamldep -sort`-less version. Except it doesn't traverse
      the whole graph (see comment on topologicalSort) so we get free dead code elimination. But we do want
      merlin to pick up newly added files, and DCE means they're not even compiled. We'll change
@@ -267,15 +255,10 @@ let sortPathsTopologically buildDirRoot::buildDirRoot libName::libName dir::dir 
           (tap 1 pathsString)
       }
     )
-  )
-    *>>| (
-    fun string =>
-      String.split string on::' ' |>
-        List.filter f::nonBlank |> List.map f::(rel dir::dir) |> taplp 1
-  )
-};
-
-sortPathsTopologically;
+  ) *>>| (
+  fun string =>
+    String.split string on::' ' |> List.filter f::nonBlank |> List.map f::(rel dir::dir) |> taplp 1
+);
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
    into a foo.re file whose content is:
@@ -439,7 +422,8 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
                         thirdPartyModules
                         f::(
                           fun m => "-I " ^ (
-                            rel dir::buildDirRoot m |> Path.reach_from dir::buildDir
+                            String.uncapitalize m |>
+                              rel dir::buildDirRoot |> Path.reach_from dir::buildDir
                           )
                         ) |>
                         String.concat sep::" "
@@ -596,12 +580,9 @@ let compileLibScheme
     isTopLevelLib::isTopLevelLib=true
     srcDir::srcDir
     libName::libName
-    buildDir::buildDir
-    buildDirRoot::buildDirRoot => Scheme.dep (
+    buildDir::buildDir => Scheme.dep (
   Dep.glob_listing (Glob.create dir::srcDir "*.re") *>>= (
-    fun unsortedPaths =>
-      sortPathsTopologically
-        buildDirRoot::buildDirRoot libName::libName dir::srcDir paths::unsortedPaths *>>| (
+    fun unsortedPaths => sortPathsTopologically dir::srcDir paths::unsortedPaths *>>| (
       fun sortedPaths => Scheme.all [
         moduleAliasFileScheme
           buildDir::buildDir
@@ -707,7 +688,6 @@ let scheme dir::dir => {
       isTopLevelLib::(libName == topLibName)
       libName::libName
       buildDir::(rel dir::buildDirRoot libName)
-      buildDirRoot::buildDirRoot
   } else if (
     Path.dirname dir == nodeModulesRoot
   ) {
