@@ -2,6 +2,7 @@
  * vim: set ft=rust:
  * vim: set ft=reason:
  */
+
 open Core.Std;
 
 open Async.Std;
@@ -36,7 +37,7 @@ let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
 
 fileNameNoExtNoDir;
 
-/* testing/logging helpers */
+/* generic testing/logging helpers */
 let tap n a =>
   if (n == 0) {
     print_endline "tap---------";
@@ -93,6 +94,7 @@ let tapAssocList n a =>
 
 tapAssocList;
 
+/* this jengaroot-specific helpers */
 let topLibName = "top";
 
 let nodeModulesRoot = rel dir::root "node_modules";
@@ -285,6 +287,69 @@ let sortPathsTopologically buildDirRoot::buildDirRoot libName::libName dir::dir 
 
 sortPathsTopologically;
 
+/* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
+   into a foo.re file whose content is:
+   let module A = Foo__A;
+   let module B = Foo__B;
+   */
+/* We'll then compile this file into foo.cmi/cmo/cmt, and have it opened by default when compiling A.re and
+   B.re (into foo_A and foo_B respectively) later. The effect is that, inside A.re, we can refer to B instead
+   of Foo__B thanks to the pre-opened foo.re. But when these files are used by other libraries (which aren't
+   compiled with foo.re pre-opened of course), they won't see module A or B, only Foo__A and Foo__B, aka in
+   practice, they simply won't see them. This effectively means we've implemented namespacing! */
+let moduleAliasFileScheme buildDir::buildDir sourceModules::sourceModules libName::libName => {
+  let name extension => rel dir::buildDir (libName ^ "." ^ extension);
+  let sourcePath = name "re";
+  let cmoPath = name "cmo";
+  let cmiPath = name "cmi";
+  let cmtPath = name "cmt";
+  let fileContent =
+    List.map
+      sourceModules
+      f::(
+        fun moduleName =>
+          Printf.sprintf
+            "let module %s = %s__%s;\n" moduleName (String.capitalize libName) moduleName
+      ) |>
+      String.concat sep::"";
+  let contentRule =
+    Rule.create targets::[sourcePath] (Dep.return (Action.save fileContent target::sourcePath));
+  let compileRule =
+    Rule.create
+      targets::[cmoPath, cmiPath, cmtPath]
+      (
+        Dep.path sourcePath *>>| (
+          fun () =>
+            bashf
+              dir::buildDir
+              /* We suppress a few warnings here through -w.
+                 - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
+                 can't be found at the moment this module alias file is compiled. This is normal, since the
+                 module alias file is the first thing that's compiled (so that we can open it during
+                 compilation of A.re and B.re into Foo__A and Foo__B). Think of this as forward declaration.
+
+                 - 30: Two labels or constructors of the same name are defined in two mutually recursive
+                 types. I forgot...
+
+                 - 40: Constructor or label name used out of scope. I forgot too. Great comment huh?
+
+                 More flags:
+                 -pp refmt option makes ocamlc take our reason syntax source code and pass it through our
+                 refmt parser first, before operating on the AST.
+
+                 -bin-annot: generates cmt files that contains info such as types and bindings, for use with
+                 Merlin.
+
+                 -g: add debugging info. You don't really ever compile without this flag.
+                 */
+              "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
+              (Path.basename sourcePath)
+              (Path.basename cmoPath)
+        )
+      );
+  Scheme.rules [contentRule, compileRule]
+};
+
 let compileLibScheme
     isTopLevelLib::isTopLevelLib=true
     srcDir::srcDir
@@ -305,43 +370,6 @@ let compileLibScheme
           buildDirRoot::buildDirRoot libName::libName dir::srcDir paths::unsortedPaths
           *>>| (
           fun sortedPaths => {
-            /* module alias file generation */
-            let moduleAliasContent =
-              List.map
-                unsortedPaths
-                f::(
-                  fun path => {
-                    let name = fileNameNoExtNoDir path;
-                    Printf.sprintf
-                      "let module %s = %s__%s;\n"
-                      (stringCapitalize name)
-                      (String.capitalize libName)
-                      name
-                  }
-                ) |>
-                String.concat sep::"";
-            let moduleAliasContentRules = [
-              Rule.create
-                targets::[moduleAliasFilePath]
-                (Dep.return (Action.save moduleAliasContent target::moduleAliasFilePath))
-            ];
-            let moduleAliasCompileRules = [
-              Rule.create
-                targets::[moduleAliasCmoPath, tapp 1 moduleAliasCmiPath, moduleAliasCmtPath]
-                (
-                  Dep.path moduleAliasFilePath *>>| (
-                    fun () =>
-                      bashf
-                        dir::buildDir
-                        /* TODO: explain the warning suppression */
-                        "ocamlc -pp refmt %s -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
-                        /* some jsoo includes were here. I don't think they're needed */
-                        ""
-                        (Path.basename moduleAliasFilePath)
-                        (Path.basename moduleAliasCmoPath)
-                  )
-                )
-            ];
             let sourcesCompileRules =
               Scheme.rules_dep @@
                 Dep.all @@
@@ -564,7 +592,11 @@ let compileLibScheme
                 []
               };
             Scheme.all [
-              Scheme.rules (moduleAliasContentRules @ moduleAliasCompileRules @ finalOutputRules),
+              moduleAliasFileScheme
+                buildDir::buildDir
+                libName::libName
+                sourceModules::(List.map unsortedPaths f::fileNameNoExtNoDir),
+              Scheme.rules finalOutputRules,
               sourcesCompileRules,
               cmaCompileRulesScheme
             ]

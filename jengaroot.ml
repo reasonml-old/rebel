@@ -175,6 +175,29 @@ let sortPathsTopologically ~buildDirRoot  ~libName  ~dir  ~paths  =
            (List.map ~f:(rel ~dir)))
           |> (taplp 1)))
 let _ = sortPathsTopologically
+let moduleAliasFileScheme ~buildDir  ~sourceModules  ~libName  =
+  let name extension = rel ~dir:buildDir (libName ^ ("." ^ extension)) in
+  let sourcePath = name "re" in
+  let cmoPath = name "cmo" in
+  let cmiPath = name "cmi" in
+  let cmtPath = name "cmt" in
+  let fileContent =
+    (List.map sourceModules
+       ~f:(fun moduleName  ->
+             Printf.sprintf "let module %s = %s__%s;\n" moduleName
+               (String.capitalize libName) moduleName))
+      |> (String.concat ~sep:"") in
+  let contentRule =
+    Rule.create ~targets:[sourcePath]
+      (Dep.return (Action.save fileContent ~target:sourcePath)) in
+  let compileRule =
+    Rule.create ~targets:[cmoPath; cmiPath; cmtPath]
+      ((Dep.path sourcePath) *>>|
+         (fun ()  ->
+            bashf ~dir:buildDir
+              "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
+              (Path.basename sourcePath) (Path.basename cmoPath))) in
+  Scheme.rules [contentRule; compileRule]
 let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir 
   ~nodeModulesRoot  ~buildDirRoot  =
   ignore isTopLevelLib;
@@ -190,30 +213,6 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
               ~paths:unsortedPaths)
              *>>|
              ((fun sortedPaths  ->
-                 let moduleAliasContent =
-                   (List.map unsortedPaths
-                      ~f:(fun path  ->
-                            let name = fileNameNoExtNoDir path in
-                            Printf.sprintf "let module %s = %s__%s;\n"
-                              (stringCapitalize name)
-                              (String.capitalize libName) name))
-                     |> (String.concat ~sep:"") in
-                 let moduleAliasContentRules =
-                   [Rule.create ~targets:[moduleAliasFilePath]
-                      (Dep.return
-                         (Action.save moduleAliasContent
-                            ~target:moduleAliasFilePath))] in
-                 let moduleAliasCompileRules =
-                   [Rule.create
-                      ~targets:[moduleAliasCmoPath;
-                               tapp 1 moduleAliasCmiPath;
-                               moduleAliasCmtPath]
-                      ((Dep.path moduleAliasFilePath) *>>|
-                         (fun ()  ->
-                            bashf ~dir:buildDir
-                              "ocamlc -pp refmt %s -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
-                              "" (Path.basename moduleAliasFilePath)
-                              (Path.basename moduleAliasCmoPath)))] in
                  let sourcesCompileRules =
                    Scheme.rules_dep @@
                      (Dep.all @@
@@ -412,9 +411,10 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir
                                   (Path.basename topOutputPath))]
                    else [] in
                  Scheme.all
-                   [Scheme.rules
-                      (moduleAliasContentRules @
-                         (moduleAliasCompileRules @ finalOutputRules));
+                   [moduleAliasFileScheme ~buildDir ~libName
+                      ~sourceModules:(List.map unsortedPaths
+                                        ~f:fileNameNoExtNoDir);
+                   Scheme.rules finalOutputRules;
                    sourcesCompileRules;
                    cmaCompileRulesScheme])))))
 let generateDotMerlinScheme ~nodeModulesRoot  ~buildDirRoot  ~isTopLevelLib 
