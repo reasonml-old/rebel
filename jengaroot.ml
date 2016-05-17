@@ -111,20 +111,24 @@ let getThirdPartyDepsForLib ~srcDir  =
                        List.for_all internalDeps
                          ~f:(fun dep'  -> dep <> dep')))))
 let _ = getThirdPartyDepsForLib
-let topologicalSort ~mainNode  assocListGraph =
-  ignore @@ (tapAssocList 1 assocListGraph);
-  (let rec topologicalSort' currNode assocListGraph accum =
+let topologicalSort graph =
+  ignore @@ (tapAssocList 1 graph);
+  (let graph = { contents = graph } in
+   let rec topologicalSort' currNode accum =
      let nodeDeps =
-       match List.find assocListGraph ~f:(fun (n,_)  -> n = currNode) with
+       match List.Assoc.find graph.contents currNode with
        | None  -> []
-       | ((Some ((_,nodeDeps')))) -> nodeDeps' in
-     List.iter nodeDeps
-       ~f:(fun dep  -> topologicalSort' dep assocListGraph accum);
+       | ((Some (nodeDeps'))) -> nodeDeps' in
+     List.iter nodeDeps ~f:(fun dep  -> topologicalSort' dep accum);
      if List.for_all accum.contents ~f:(fun n  -> n <> currNode)
-     then accum := (currNode :: (accum.contents)) in
+     then
+       (accum := (currNode :: (accum.contents));
+        graph := (List.Assoc.remove graph.contents currNode)) in
    let accum = { contents = [] } in
-   topologicalSort' mainNode assocListGraph accum; List.rev accum.contents)
-let sortTransitiveThirdParties ~topLibName  =
+   while not (List.is_empty graph.contents) do
+     topologicalSort' (fst (List.hd_exn graph.contents)) accum done;
+   List.rev accum.contents)
+let sortTransitiveThirdParties =
   (getThirdPartyDepsForLib ~srcDir:topSrcDir) *>>=
     (fun topThirdPartyDeps  ->
        let thirdPartiesSrcDirs =
@@ -137,13 +141,10 @@ let sortTransitiveThirdParties ~topLibName  =
          Dep.all
            (List.map thirdPartiesSrcDirs
               ~f:(fun srcDir  -> getThirdPartyDepsForLib ~srcDir)) in
-       let topLibModuleName = String.capitalize topLibName in
        thirdPartiesThirdPartyDepsD *>>|
          (fun thirdPartiesThirdPartyDeps  ->
-            ((List.zip_exn (topLibModuleName :: topThirdPartyDeps)
-                (topThirdPartyDeps :: thirdPartiesThirdPartyDeps))
-               |> (topologicalSort ~mainNode:topLibModuleName))
-              |> (List.filter ~f:(fun m  -> m <> topLibModuleName))))
+            (List.zip_exn topThirdPartyDeps thirdPartiesThirdPartyDeps) |>
+              topologicalSort))
 let sortPathsTopologically ~dir  ~paths  =
   (Dep.action_stdout
      ((Dep.all_unit (List.map paths ~f:Dep.path)) *>>|
@@ -273,9 +274,7 @@ let compileCmaScheme ~sortedSourcePaths  ~libName  ~isTopLevelLib  ~buildDir
   if isTopLevelLib
   then
     Scheme.dep
-      ((Dep.both jsooLocationD
-          (sortTransitiveThirdParties ~topLibName:libName))
-         *>>|
+      ((Dep.both jsooLocationD sortTransitiveThirdParties) *>>|
          (fun (jsooLocation,thirdPartyTransitiveDeps)  ->
             let transitiveCmaPaths =
               List.map thirdPartyTransitiveDeps

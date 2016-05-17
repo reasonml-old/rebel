@@ -185,29 +185,31 @@ let getThirdPartyDepsForLib srcDir::srcDir => Dep.glob_listing (Glob.create dir:
 
 getThirdPartyDepsForLib;
 
-/* this isn't completely generic. mainNode is the start node. We potentially don't traverse the whole graph,
-   only the subgraph connected to mainNode (aka dangling dependencies not used by mainNode are ignored) */
-let topologicalSort mainNode::mainNode assocListGraph => {
-  ignore @@ tapAssocList 1 assocListGraph;
-  let rec topologicalSort' currNode assocListGraph accum => {
+let topologicalSort graph => {
+  ignore @@ tapAssocList 1 graph;
+  let graph = {contents: graph};
+  let rec topologicalSort' currNode accum => {
     let nodeDeps =
-      switch (List.find assocListGraph f::(fun (n, _) => n == currNode)) {
+      switch (List.Assoc.find graph.contents currNode) {
       /* node not found: presume to be third-party dep. This is slightly dangerous because it might also mean
          we didn't construct the graph correctly. */
       | None => []
-      | Some (_, nodeDeps') => nodeDeps'
+      | Some nodeDeps' => nodeDeps'
       };
-    List.iter nodeDeps f::(fun dep => topologicalSort' dep assocListGraph accum);
+    List.iter nodeDeps f::(fun dep => topologicalSort' dep accum);
     if (List.for_all accum.contents f::(fun n => n != currNode)) {
-      accum := [currNode, ...accum.contents]
+      accum := [currNode, ...accum.contents];
+      graph := List.Assoc.remove graph.contents currNode
     }
   };
   let accum = {contents: []};
-  topologicalSort' mainNode assocListGraph accum;
+  while (not (List.is_empty graph.contents)) {
+    topologicalSort' (fst (List.hd_exn graph.contents)) accum
+  };
   List.rev accum.contents
 };
 
-let sortTransitiveThirdParties topLibName::topLibName => getThirdPartyDepsForLib srcDir::topSrcDir *>>= (
+let sortTransitiveThirdParties = getThirdPartyDepsForLib srcDir::topSrcDir *>>= (
   fun topThirdPartyDeps => {
     let thirdPartiesSrcDirs =
       List.map
@@ -216,15 +218,8 @@ let sortTransitiveThirdParties topLibName::topLibName => getThirdPartyDepsForLib
     let thirdPartiesThirdPartyDepsD = Dep.all (
       List.map thirdPartiesSrcDirs f::(fun srcDir => getThirdPartyDepsForLib srcDir::srcDir)
     );
-    let topLibModuleName = String.capitalize topLibName;
     thirdPartiesThirdPartyDepsD *>>| (
-      fun thirdPartiesThirdPartyDeps =>
-        List.zip_exn
-          [topLibModuleName, ...topThirdPartyDeps]
-          [topThirdPartyDeps, ...thirdPartiesThirdPartyDeps] |>
-          topologicalSort mainNode::topLibModuleName |>
-          /* remove the top lib node itself from the sorted result */
-          List.filter f::(fun m => m != topLibModuleName)
+      fun thirdPartiesThirdPartyDeps => List.zip_exn topThirdPartyDeps thirdPartiesThirdPartyDeps |> topologicalSort
     )
   }
 );
@@ -465,7 +460,7 @@ let compileCmaScheme
   /* Final bundling. Time to get all the transitive dependencies... */
   if isTopLevelLib {
     Scheme.dep (
-      Dep.both jsooLocationD (sortTransitiveThirdParties topLibName::libName) *>>| (
+      Dep.both jsooLocationD sortTransitiveThirdParties *>>| (
         fun (jsooLocation, thirdPartyTransitiveDeps) => {
           let transitiveCmaPaths =
             List.map
