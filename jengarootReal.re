@@ -97,6 +97,8 @@ tapAssocList;
 /* this jengaroot-specific helpers */
 let topLibName = "top";
 
+let finalOutputName = "app";
+
 let nodeModulesRoot = rel dir::root "node_modules";
 
 let buildDirRoot = rel dir::root "_build";
@@ -350,6 +352,43 @@ let moduleAliasFileScheme buildDir::buildDir sourceModules::sourceModules libNam
   Scheme.rules [contentRule, compileRule]
 };
 
+/* This assumes we're using it correctly, only at the top level. */
+/* We'll output an executable, plus a js_of_ocaml JavaScript file. Throughout the compilation of the source
+   files, we've already mingled in the correctly jsoo search paths in ocamlc to make this final compilation
+   work. */
+/* The output step is simple because the lib.cma library file already has all the information (including
+   dependencies) inside. */
+let finalOutputsScheme topBuildDir::topBuildDir => {
+  let cmaPath = rel dir::topBuildDir "lib.cma";
+  let binaryPath = rel dir::topBuildDir (finalOutputName ^ ".out");
+  let jsooPath = rel dir::topBuildDir (finalOutputName ^ ".js");
+  Scheme.rules [
+    Rule.simple
+      targets::[binaryPath]
+      /* Currently assume the entry file is Index.re, compiled into myLibraryName__Index.cmo */
+      deps::[Dep.path cmaPath, Dep.path (rel dir::topBuildDir (topLibName ^ "__Index.cmo"))]
+      action::(
+        bashf
+          dir::topBuildDir
+          "ocamlc -g -o %s %s %s"
+          (Path.basename binaryPath)
+          (Path.basename cmaPath)
+          (topLibName ^ "__Index.cmo")
+      ),
+    Rule.simple
+      targets::[jsooPath]
+      deps::[Dep.path binaryPath]
+      action::(
+        bashf
+          dir::topBuildDir
+          /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the output is
+             still butt ugly. Just kidding I love you guys. */
+          "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
+          (Path.basename binaryPath)
+      )
+  ]
+};
+
 let compileLibScheme
     isTopLevelLib::isTopLevelLib=true
     srcDir::srcDir
@@ -557,48 +596,16 @@ let compileLibScheme
                     )
                 ]
               };
-            /* exec output and jsoo output */
-            let finalOutputRules =
-              if isTopLevelLib {
-                let topOutputPath = rel dir::buildDir "app.out";
-                let topOutputPathJsoo = rel dir::buildDir "app.js";
-                [
-                  /* ocamlc -g -o _build/hi/entry.out _build/hi/lib.cma _build/hi/hi__main.cmo */
-                  Rule.simple
-                    targets::[topOutputPath]
-                    deps::[
-                      Dep.path cmaPath,
-                      Dep.path (rel dir::buildDir (topLibName ^ "__Index.cmo"))
-                    ]
-                    action::(
-                      bashf
-                        dir::buildDir
-                        "ocamlc -g -o %s %s %s"
-                        (Path.basename topOutputPath)
-                        (Path.basename cmaPath)
-                        (topLibName ^ "__Index.cmo")
-                    ),
-                  Rule.simple
-                    targets::[topOutputPathJsoo]
-                    deps::[Dep.path topOutputPath]
-                    action::(
-                      bashf
-                        dir::buildDir
-                        "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
-                        (Path.basename topOutputPath)
-                    )
-                ]
-              } else {
-                []
-              };
+            let finalOutputsRules =
+              isTopLevelLib ? finalOutputsScheme topBuildDir::buildDir : Scheme.no_rules;
             Scheme.all [
               moduleAliasFileScheme
                 buildDir::buildDir
                 libName::libName
                 sourceModules::(List.map unsortedPaths f::fileNameNoExtNoDir),
-              Scheme.rules finalOutputRules,
               sourcesCompileRules,
-              cmaCompileRulesScheme
+              cmaCompileRulesScheme,
+              finalOutputsRules
             ]
           }
         )
@@ -673,8 +680,8 @@ let scheme dir::dir => {
         Rule.default
           dir::dir
           [
-            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "app.out"),
-            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) "app.js"),
+            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) (finalOutputName ^ ".out")),
+            Dep.path (rel dir::(rel dir::buildDirRoot topLibName) (finalOutputName ^ ".js")),
             Dep.path (rel dir::root ".merlin")
           ]
       ],
