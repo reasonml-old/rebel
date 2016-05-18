@@ -389,7 +389,8 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
   Scheme.dep (mapD jsooLocationD compileSourcesScheme')
 };
 
-/* Cma is a library file for the current library which bundles up all the lib's first-party compiled sources.
+/* This function assumes we're not using it at the top level.
+   Cma is a library file for the current library which bundles up all the lib's first-party compiled sources.
    This way, it's much easier, at the end, at the top level, to include each library's cma file to compile the
    final executable, than to tediously pass every single source file from every lib in order.
 
@@ -397,13 +398,9 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
    bundled up its third-party deps' cma too, but then we might get into duplicate artifact problem caused by
    e.g. library A and B both requiring and bundling C. So we can only bundle first-party code, and then, at
    the top, take all the transitive dependencies (libraries) cmas, figure out their relative order, and pass
-   them in that order to the ocamlc command. Still tedious, but at least we're not passing individual source
-   files in order. */
-let compileCmaScheme
-    sortedSourcePaths::sortedSourcePaths
-    libName::libName
-    isTopLevelLib::isTopLevelLib
-    buildDir::buildDir => {
+   them in that order to the ocamlc command (this logic is in `finalOutputsScheme` below). Still tedious, but
+   at least we're not passing individual source files in order. */
+let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName buildDir::buildDir => {
   let cmaPath = rel dir::buildDir libraryFileName;
   let moduleAliasCmoPath = rel dir::buildDir (libName ^ ".cmo");
   let cmos =
@@ -413,114 +410,108 @@ let compileCmaScheme
       f::(fun path => rel dir::buildDir (libName ^ "__" ^ fileNameNoExtNoDir path ^ ".cmo"));
   let cmosString = List.map cmos f::Path.basename |> String.concat sep::" ";
   /* Final bundling. Time to get all the transitive dependencies... */
-  if isTopLevelLib {
-    Scheme.dep (
-      mapD
-        (Dep.both jsooLocationD sortTransitiveThirdParties)
-        (
-          fun (jsooLocation, thirdPartyTransitiveDeps) => {
-            let transitiveCmaPaths =
-              List.map
-                thirdPartyTransitiveDeps
-                f::(fun dep => rel dir::(rel dir::buildDirRoot (uncap dep)) libraryFileName);
-            let action =
-              bashf
-                dir::buildDir
-                /* For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
-                   the module invokes some jsoo's Js module-related stuff. */
-                /* Example command: ocamlc -g -I path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma \
-                   -open Top -a -o lib.cma  ../barDependsOnMe/lib.cma ../bar/lib.cma ../baz/lib.cma \
-                   top.cmo aDependsOnMe.cmo a.cmo moreFirstPartyCmo.cmo */
-                /* Flags:
-                   -I: search path(s), when ocamlc looks for modules referenced inside the file.
-
-                   -open: compile the file as if [file being opened] was opened at the top of the file. In
-                   our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
-                   function for more comment.
-
-                   -a: flag for building a library.
-
-                   -o: output file name.
-                   */
-                "ocamlc -g -I %s %s/js_of_ocaml.cma -open %s -a -o %s %s %s %s"
-                jsooLocation
-                jsooLocation
-                (cap libName)
-                (Path.basename cmaPath)
-                (
-                  transitiveCmaPaths |>
-                    List.map f::(Path.reach_from dir::buildDir) |> String.concat sep::" "
-                )
-                (Path.basename moduleAliasCmoPath)
-                cmosString;
-            Scheme.rules [
-              Rule.simple
-                targets::[cmaPath]
-                deps::(
-                  /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-                  [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |>
-                    List.map f::Dep.path
-                )
-                action::action
-            ]
-          }
-        )
-    )
-  } else {
-    Scheme.rules [
-      Rule.simple
-        targets::[cmaPath]
-        deps::(List.map [moduleAliasCmoPath, ...cmos] f::Dep.path)
-        action::(
-          bashf
-            dir::buildDir
-            /* Example command: ocamlc -g -open Foo -a -o lib.cma foo.cmo aDependsOnMe.cmo a.cmo b.cmo */
-            "ocamlc -g -open %s -a -o %s %s %s"
-            (cap libName)
-            (Path.basename cmaPath)
-            (Path.basename moduleAliasCmoPath)
-            cmosString
-        )
-    ]
-  }
-};
-
-/* This function assumes we're using it only at the top level. */
-/* We'll output an executable, plus a js_of_ocaml JavaScript file. Throughout the compilation of the source
-   files, we've already mingled in the correctly jsoo search paths in ocamlc to make this final compilation
-   work.
-
-   The output step is simple because the lib.cma library file already has all the information (including
-   dependencies) inside. */
-let finalOutputsScheme topBuildDir::topBuildDir => {
-  let cmaPath = rel dir::topBuildDir libraryFileName;
-  let binaryPath = rel dir::topBuildDir (finalOutputName ^ ".out");
-  let jsooPath = rel dir::topBuildDir (finalOutputName ^ ".js");
   Scheme.rules [
     Rule.simple
-      targets::[binaryPath]
-      /* Currently assume the entry file is Index.re, compiled into myLibraryName__Index.cmo */
-      deps::[Dep.path cmaPath, relD dir::topBuildDir (topLibName ^ "__Index.cmo")]
+      targets::[cmaPath]
+      deps::(List.map [moduleAliasCmoPath, ...cmos] f::Dep.path)
       action::(
         bashf
-          dir::topBuildDir
-          "ocamlc -g -o %s %s %s"
-          (Path.basename binaryPath)
+          dir::buildDir
+          /* Flags:
+             -open: compile the file as if [file being opened] was opened at the top of the file. In
+             our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
+             function for more comment.
+
+             -a: flag for building a library.
+
+             -o: output file name.
+             */
+          /* Example command: ocamlc -g -open Foo -a -o lib.cma foo.cmo aDependsOnMe.cmo a.cmo b.cmo */
+          "ocamlc -g -open %s -a -o %s %s %s"
+          (cap libName)
           (Path.basename cmaPath)
-          (topLibName ^ "__Index.cmo")
-      ),
-    Rule.simple
-      targets::[jsooPath]
-      deps::[Dep.path binaryPath]
-      action::(
-        bashf
-          dir::topBuildDir
-          /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the output is
-             still butt ugly. Just kidding I love you guys. */
-          "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
-          (Path.basename binaryPath)
+          (Path.basename moduleAliasCmoPath)
+          cmosString
       )
   ]
+};
+
+/* This function assumes we're using it only at the top level.
+   We'll output an executable, plus a js_of_ocaml JavaScript file. Throughout the compilation of the source
+   files, we've already mingled in the correctly jsoo search paths in ocamlc to make this final compilation
+   work. */
+let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
+  let buildDir = rel dir::buildDirRoot topLibName;
+  let binaryPath = rel dir::buildDir (finalOutputName ^ ".out");
+  let jsooPath = rel dir::buildDir (finalOutputName ^ ".js");
+  let moduleAliasCmoPath = rel dir::buildDir (topLibName ^ ".cmo");
+  let cmos =
+    List.map
+      /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
+      sortedSourcePaths
+      f::(fun path => rel dir::buildDir (topLibName ^ "__" ^ fileNameNoExtNoDir path ^ ".cmo"));
+  let cmosString = List.map cmos f::Path.basename |> String.concat sep::" ";
+  Scheme.dep (
+    mapD
+      (Dep.both jsooLocationD sortTransitiveThirdParties)
+      (
+        fun (jsooLocation, thirdPartyTransitiveDeps) => {
+          let transitiveCmaPaths =
+            List.map
+              thirdPartyTransitiveDeps
+              f::(fun dep => rel dir::(rel dir::buildDirRoot (uncap dep)) libraryFileName);
+          let action =
+            bashf
+              dir::buildDir
+              /* For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
+                 the module invokes some jsoo's Js module-related stuff. */
+              /* Example command: ocamlc -g -I path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma \
+                 -open Top -o app.out  ../barDependsOnMe/lib.cma ../bar/lib.cma ../baz/lib.cma \
+                 top.cmo aDependsOnMe.cmo a.cmo moreFirstPartyCmo.cmo */
+              /* Flags:
+                 -I: search path(s), when ocamlc looks for modules referenced inside the file.
+
+                 -open: compile the file as if [file being opened] was opened at the top of the file. In
+                 our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
+                 function for more comment.
+
+                 -o: output file name.
+                 */
+              "ocamlc -g -I %s %s/js_of_ocaml.cma -open %s -o %s %s %s %s"
+              jsooLocation
+              jsooLocation
+              (cap topLibName)
+              (Path.basename binaryPath)
+              (
+                transitiveCmaPaths |>
+                  List.map f::(Path.reach_from dir::buildDir) |> String.concat sep::" "
+              )
+              (Path.basename moduleAliasCmoPath)
+              cmosString;
+          Scheme.rules [
+            Rule.simple
+              targets::[binaryPath]
+              deps::(
+                /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
+                [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |>
+                  List.map f::Dep.path
+              )
+              action::action,
+            Rule.simple
+              targets::[jsooPath]
+              deps::[Dep.path binaryPath]
+              action::(
+                bashf
+                  dir::buildDir
+                  /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
+                     output is still butt ugly. Just kidding I love you guys. */
+                  "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
+                  (Path.basename binaryPath)
+              )
+          ]
+        }
+      )
+  )
 };
 
 /* The function that ties together all the previous steps and compiles a given library, whether it be our top
@@ -543,12 +534,12 @@ let compileLibScheme
                 libName::libName
                 sourceModules::(List.map unsortedPaths f::fileNameNoExtNoDir),
               compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::unsortedPaths,
-              compileCmaScheme
-                buildDir::buildDir
-                isTopLevelLib::isTopLevelLib
-                libName::libName
-                sortedSourcePaths::sortedPaths,
-              isTopLevelLib ? finalOutputsScheme topBuildDir::buildDir : Scheme.no_rules
+              isTopLevelLib ?
+                /* if we're at the final, top level compilation, there's no need to build a cma output (and
+                   then generate an executable from it). We can cut straight to generating the executable. See
+                   `finalOutputsScheme`. */
+                finalOutputsScheme sortedSourcePaths::sortedPaths :
+                compileCmaScheme buildDir::buildDir libName::libName sortedSourcePaths::sortedPaths
             ]
           )
     )

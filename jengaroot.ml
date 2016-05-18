@@ -222,8 +222,7 @@ let compileSourcesScheme ~buildDir  ~libName  ~sourcePaths  =
     Scheme.rules_dep
       (Dep.all (List.map sourcePaths ~f:compileEachSourcePath)) in
   Scheme.dep (mapD jsooLocationD compileSourcesScheme')
-let compileCmaScheme ~sortedSourcePaths  ~libName  ~isTopLevelLib  ~buildDir 
-  =
+let compileCmaScheme ~sortedSourcePaths  ~libName  ~buildDir  =
   let cmaPath = rel ~dir:buildDir libraryFileName in
   let moduleAliasCmoPath = rel ~dir:buildDir (libName ^ ".cmo") in
   let cmos =
@@ -233,51 +232,49 @@ let compileCmaScheme ~sortedSourcePaths  ~libName  ~isTopLevelLib  ~buildDir
               (libName ^ ("__" ^ ((fileNameNoExtNoDir path) ^ ".cmo")))) in
   let cmosString =
     (List.map cmos ~f:Path.basename) |> (String.concat ~sep:" ") in
-  if isTopLevelLib
-  then
-    Scheme.dep
-      (mapD (Dep.both jsooLocationD sortTransitiveThirdParties)
-         (fun (jsooLocation,thirdPartyTransitiveDeps)  ->
-            let transitiveCmaPaths =
-              List.map thirdPartyTransitiveDeps
-                ~f:(fun dep  ->
-                      rel ~dir:(rel ~dir:buildDirRoot (uncap dep))
-                        libraryFileName) in
-            let action =
-              bashf ~dir:buildDir
-                "ocamlc -g -I %s %s/js_of_ocaml.cma -open %s -a -o %s %s %s %s"
-                jsooLocation jsooLocation (cap libName)
-                (Path.basename cmaPath)
-                ((transitiveCmaPaths |>
-                    (List.map ~f:(Path.reach_from ~dir:buildDir)))
-                   |> (String.concat ~sep:" "))
-                (Path.basename moduleAliasCmoPath) cmosString in
-            Scheme.rules
-              [Rule.simple ~targets:[cmaPath]
-                 ~deps:(([moduleAliasCmoPath] @ (cmos @ transitiveCmaPaths))
-                          |> (List.map ~f:Dep.path)) ~action]))
-  else
-    Scheme.rules
-      [Rule.simple ~targets:[cmaPath]
-         ~deps:(List.map (moduleAliasCmoPath :: cmos) ~f:Dep.path)
-         ~action:(bashf ~dir:buildDir "ocamlc -g -open %s -a -o %s %s %s"
-                    (cap libName) (Path.basename cmaPath)
-                    (Path.basename moduleAliasCmoPath) cmosString)]
-let finalOutputsScheme ~topBuildDir  =
-  let cmaPath = rel ~dir:topBuildDir libraryFileName in
-  let binaryPath = rel ~dir:topBuildDir (finalOutputName ^ ".out") in
-  let jsooPath = rel ~dir:topBuildDir (finalOutputName ^ ".js") in
   Scheme.rules
-    [Rule.simple ~targets:[binaryPath]
-       ~deps:[Dep.path cmaPath;
-             relD ~dir:topBuildDir (topLibName ^ "__Index.cmo")]
-       ~action:(bashf ~dir:topBuildDir "ocamlc -g -o %s %s %s"
-                  (Path.basename binaryPath) (Path.basename cmaPath)
-                  (topLibName ^ "__Index.cmo"));
-    Rule.simple ~targets:[jsooPath] ~deps:[Dep.path binaryPath]
-      ~action:(bashf ~dir:topBuildDir
-                 "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
-                 (Path.basename binaryPath))]
+    [Rule.simple ~targets:[cmaPath]
+       ~deps:(List.map (moduleAliasCmoPath :: cmos) ~f:Dep.path)
+       ~action:(bashf ~dir:buildDir "ocamlc -g -open %s -a -o %s %s %s"
+                  (cap libName) (Path.basename cmaPath)
+                  (Path.basename moduleAliasCmoPath) cmosString)]
+let finalOutputsScheme ~sortedSourcePaths  =
+  let buildDir = rel ~dir:buildDirRoot topLibName in
+  let binaryPath = rel ~dir:buildDir (finalOutputName ^ ".out") in
+  let jsooPath = rel ~dir:buildDir (finalOutputName ^ ".js") in
+  let moduleAliasCmoPath = rel ~dir:buildDir (topLibName ^ ".cmo") in
+  let cmos =
+    List.map sortedSourcePaths
+      ~f:(fun path  ->
+            rel ~dir:buildDir
+              (topLibName ^ ("__" ^ ((fileNameNoExtNoDir path) ^ ".cmo")))) in
+  let cmosString =
+    (List.map cmos ~f:Path.basename) |> (String.concat ~sep:" ") in
+  Scheme.dep
+    (mapD (Dep.both jsooLocationD sortTransitiveThirdParties)
+       (fun (jsooLocation,thirdPartyTransitiveDeps)  ->
+          let transitiveCmaPaths =
+            List.map thirdPartyTransitiveDeps
+              ~f:(fun dep  ->
+                    rel ~dir:(rel ~dir:buildDirRoot (uncap dep))
+                      libraryFileName) in
+          let action =
+            bashf ~dir:buildDir
+              "ocamlc -g -I %s %s/js_of_ocaml.cma -open %s -o %s %s %s %s"
+              jsooLocation jsooLocation (cap topLibName)
+              (Path.basename binaryPath)
+              ((transitiveCmaPaths |>
+                  (List.map ~f:(Path.reach_from ~dir:buildDir)))
+                 |> (String.concat ~sep:" "))
+              (Path.basename moduleAliasCmoPath) cmosString in
+          Scheme.rules
+            [Rule.simple ~targets:[binaryPath]
+               ~deps:(([moduleAliasCmoPath] @ (cmos @ transitiveCmaPaths)) |>
+                        (List.map ~f:Dep.path)) ~action;
+            Rule.simple ~targets:[jsooPath] ~deps:[Dep.path binaryPath]
+              ~action:(bashf ~dir:buildDir
+                         "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
+                         (Path.basename binaryPath))]))
 let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir  =
   Scheme.dep
     (bindD (Dep.glob_listing (Glob.create ~dir:srcDir "*.re"))
@@ -290,11 +287,12 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir  =
                                       ~f:fileNameNoExtNoDir);
                  compileSourcesScheme ~buildDir ~libName
                    ~sourcePaths:unsortedPaths;
-                 compileCmaScheme ~buildDir ~isTopLevelLib ~libName
-                   ~sortedSourcePaths:sortedPaths;
                  (match isTopLevelLib with
-                  | true  -> finalOutputsScheme ~topBuildDir:buildDir
-                  | false  -> Scheme.no_rules)])))
+                  | true  ->
+                      finalOutputsScheme ~sortedSourcePaths:sortedPaths
+                  | false  ->
+                      compileCmaScheme ~buildDir ~libName
+                        ~sortedSourcePaths:sortedPaths)])))
 let dotMerlinScheme ~isTopLevelLib  ~libName  ~dir  =
   let dotMerlinContent =
     Printf.sprintf
