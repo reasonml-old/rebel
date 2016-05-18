@@ -21,55 +21,57 @@ let libraryFileName = "lib.cma"
 let nodeModulesRoot = rel ~dir:root "node_modules"
 let buildDirRoot = rel ~dir:root "_build"
 let topSrcDir = rel ~dir:root "src"
-let ocamlDepModules ~sourcePath  =
-  let ocamlDepModules' subdirs =
-    let execDir = Path.dirname sourcePath in
-    let thirdPartyBuildRoots =
-      List.map subdirs
-        ~f:(fun subdir  -> rel ~dir:buildDirRoot (Path.basename subdir)) in
-    mapD
-      (Dep.action_stdout
-         (mapD
-            (Dep.all_unit
-               [Dep.path sourcePath;
-               Dep.all_unit
-                 (List.map thirdPartyBuildRoots
-                    ~f:(fun buildRoot  ->
-                          relD ~dir:buildRoot
-                            ((Path.basename buildRoot) ^ ".cmi")))])
-            (fun ()  ->
-               bashf ~dir:execDir
-                 "ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -one-line %s"
-                 (((thirdPartyBuildRoots |>
-                      (List.map
-                         ~f:(fun path  -> Path.reach_from ~dir:execDir path)))
-                     |> (List.map ~f:(fun path  -> "-I " ^ path)))
-                    |> (String.concat ~sep:" ")) (Path.basename sourcePath))))
-      (fun string  ->
-         match (((String.strip string) |> (String.split ~on:'\n')) |>
-                  List.hd_exn)
-                 |> (String.split ~on:':')
-         with
-         | original::deps::[] ->
-             ((((String.split deps ~on:' ') |> (List.filter ~f:nonBlank)) |>
-                 (List.map ~f:chopSuffixExn))
-                |> (List.filter ~f:(fun m  -> m <> (chopSuffixExn original))))
-               |>
-               (List.map
-                  ~f:(fun m  ->
-                        match String.rindex m '/' with
-                        | None  -> m
-                        | ((Some (idx))) ->
-                            (String.slice m (idx + 1) (String.length m)) |>
-                              cap))
-         | _ -> failwith "expected exactly one ':' in ocamldep output line") in
-  bindD (Dep.subdirs ~dir:nodeModulesRoot) ocamlDepModules'
+let ocamlDep ~sourcePath  =
+  let srcDir = Path.dirname sourcePath in
+  let action =
+    Dep.action_stdout
+      (Dep.return
+         (bashf ~dir:srcDir "ocamldep -pp refmt -modules -one-line -impl %s"
+            (Path.basename sourcePath))) in
+  let processRawString string =
+    match (String.strip string) |> (String.split ~on:':') with
+    | original::deps::[] ->
+        (original,
+          ((String.split deps ~on:' ') |> (List.filter ~f:nonBlank)))
+    | _ -> failwith "expected exactly one ':' in ocamldep output line" in
+  bindD (Dep.path sourcePath) (fun ()  -> mapD action processRawString)
+let ocamlDepCurrentSources ~sourcePath  =
+  let srcDir = Path.dirname sourcePath in
+  bindD (ocamlDep ~sourcePath)
+    (fun (original,deps)  ->
+       mapD (Dep.glob_listing (Glob.create ~dir:srcDir "*.re"))
+         (fun sourcePaths  ->
+            let sourceModules = List.map sourcePaths ~f:fileNameNoExtNoDir in
+            (List.filter deps ~f:(fun m  -> m <> (chopSuffixExn original)))
+              |>
+              (List.filter
+                 ~f:(fun m  ->
+                       List.exists sourceModules ~f:(fun m'  -> m = m')))))
+let ocamlDepIncludingThirdParty ~sourcePath  =
+  let srcDir = Path.dirname sourcePath in
+  bindD (ocamlDep ~sourcePath)
+    (fun (original,deps)  ->
+       mapD
+         (Dep.both (Dep.subdirs ~dir:nodeModulesRoot)
+            (Dep.glob_listing (Glob.create ~dir:srcDir "*.re")))
+         (fun (thirdPartyRoots,sourcePaths)  ->
+            let sourceModules = List.map sourcePaths ~f:fileNameNoExtNoDir in
+            let thirdPartyModules =
+              List.map thirdPartyRoots
+                ~f:(fun r  -> (Path.basename r) |> String.capitalize) in
+            (List.filter deps ~f:(fun m  -> m <> (chopSuffixExn original)))
+              |>
+              (List.filter
+                 ~f:(fun m  ->
+                       (List.exists sourceModules ~f:(fun m'  -> m = m')) ||
+                         (List.exists thirdPartyModules
+                            ~f:(fun m'  -> m = m'))))))
 let getThirdPartyDepsForLib ~srcDir  =
   let getThirdPartyDepsForLib' sourcePaths =
     mapD
       (Dep.all
          (List.map sourcePaths
-            ~f:(fun sourcePath  -> ocamlDepModules ~sourcePath)))
+            ~f:(fun sourcePath  -> ocamlDepIncludingThirdParty ~sourcePath)))
       (fun sourcePathsDeps  ->
          let internalDeps = List.map sourcePaths ~f:fileNameNoExtNoDir in
          ((List.concat sourcePathsDeps) |> List.dedup) |>
@@ -110,37 +112,13 @@ let sortTransitiveThirdParties =
                   ~f:(fun a  -> (Path.basename a) |> cap))
                thirdPartiesThirdPartyDeps)
               |> topologicalSort))
-let ocamlDepModules2 ~sourcePath  =
-  let srcDir = Path.dirname sourcePath in
-  bindD
-    (Dep.both (Dep.path sourcePath)
-       (Dep.glob_listing (Glob.create ~dir:srcDir "*.re")))
-    (fun ((),sourcePaths)  ->
-       mapD
-         (Dep.action_stdout
-            (Dep.return
-               (bashf ~dir:srcDir
-                  "ocamldep -pp refmt -modules -ml-synonym .re -mli-synonym .rei -modules -one-line %s"
-                  (Path.basename sourcePath))))
-         (fun string  ->
-            let sourceModules = List.map sourcePaths ~f:fileNameNoExtNoDir in
-            match (String.strip string) |> (String.split ~on:':') with
-            | original::deps::[] ->
-                (((String.split deps ~on:' ') |> (List.filter ~f:nonBlank))
-                   |>
-                   (List.filter ~f:(fun m  -> m <> (chopSuffixExn original))))
-                  |>
-                  (List.filter
-                     ~f:(fun m  ->
-                           List.exists sourceModules ~f:(fun m'  -> m = m')))
-            | _ ->
-                failwith "expected exactly one ':' in ocamldep output line"))
 let sortPathsTopologically ~dir  ~paths  =
   let pathsAsModules =
     List.map paths ~f:(fun path  -> fileNameNoExtNoDir path) in
   let depsForPathsD =
     Dep.all
-      (List.map paths ~f:(fun path  -> ocamlDepModules2 ~sourcePath:path)) in
+      (List.map paths
+         ~f:(fun path  -> ocamlDepCurrentSources ~sourcePath:path)) in
   mapD depsForPathsD
     (fun depsForPaths  ->
        ((List.zip_exn pathsAsModules depsForPaths) |> topologicalSort) |>
@@ -178,7 +156,7 @@ let compileSourcesScheme ~buildDir  ~libName  ~sourcePaths  =
     let moduleAliasDep extension =
       relD ~dir:buildDir (libName ^ ("." ^ extension)) in
     let compileEachSourcePath path =
-      mapD (ocamlDepModules ~sourcePath:path)
+      mapD (ocamlDepIncludingThirdParty ~sourcePath:path)
         (fun modules  ->
            let thirdPartyModules =
              List.filter modules

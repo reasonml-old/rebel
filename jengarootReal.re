@@ -54,80 +54,87 @@ let buildDirRoot = rel dir::root "_build";
 
 let topSrcDir = rel dir::root "src";
 
-/* Wrapper around the ocamldep CLI which gives us back the modules a file depends on. However, the
-   implementation isn't perfect. Notably, if we have: `open Foo; let a = Bar.x;` we might have a false
-   positive `Bar` when it's really from Foo.Bar */
-let ocamlDepModules sourcePath::sourcePath => {
-  let ocamlDepModules' subdirs => {
-    let execDir = Path.dirname sourcePath;
-    let thirdPartyBuildRoots =
-      List.map subdirs f::(fun subdir => rel dir::buildDirRoot (Path.basename subdir));
-    mapD
-      (
-        Dep.action_stdout (
-          mapD
-            (
-              Dep.all_unit [
-                Dep.path sourcePath,
-                Dep.all_unit (
-                  List.map
-                    thirdPartyBuildRoots
-                    /* We depend on the module alias file of the third-party libraries being compiled. */
-                    f::(fun buildRoot => relD dir::buildRoot (Path.basename buildRoot ^ ".cmi"))
-                )
-              ]
-            )
-            (
-              fun () =>
-                bashf
-                  dir::execDir
-                  "ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -one-line %s"
-                  (
-                    thirdPartyBuildRoots |>
-                      List.map f::(fun path => Path.reach_from dir::execDir path) |>
-                      List.map f::(fun path => "-I " ^ path) |>
-                      String.concat sep::" "
-                  )
-                  (Path.basename sourcePath)
-            )
-        )
-      )
-      (
-        fun string =>
-          switch (
-            String.strip string |> String.split on::'\n' |> List.hd_exn |> String.split on::':'
-          ) {
-          | [original, deps] =>
-            String.split deps on::' ' |>
-              List.filter f::nonBlank |>
-              List.map f::chopSuffixExn |>
-              /* TODO: mother of all fragile logic. */
-              /* node_modules/bookshop/src/Index.cmo : node_modules/bookshop/src/Index.cmi */
-              /* ^ this means that there's a rei interface file for it. Doesn't mean much else, and definitely
-                 doesn't mean we're using Index inside Index. Filter it out */
-              List.filter f::(fun m => m != chopSuffixExn original) |>
-              /* TODO: fragile logic. The result might be ../_build/bookshop/bookshop.cmo so this is how we
-                 temporarily detect it */
-              List.map
-                f::(
-                  fun m =>
-                    switch (String.rindex m '/') {
-                    | None => m
-                    | Some idx => String.slice m (idx + 1) (String.length m) |> cap
-                    }
-                )
-          | _ => failwith "expected exactly one ':' in ocamldep output line"
-          }
-      )
-  };
-  bindD (Dep.subdirs dir::nodeModulesRoot) ocamlDepModules'
+/* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
+   ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate */
+let ocamlDep sourcePath::sourcePath => {
+  let srcDir = Path.dirname sourcePath;
+  let action = Dep.action_stdout (
+    Dep.return (
+      bashf dir::srcDir "ocamldep -pp refmt -modules -one-line -impl %s" (Path.basename sourcePath)
+    )
+  );
+  let processRawString string =>
+    switch (String.strip string |> String.split on::':') {
+    | [original, deps] => (original, String.split deps on::' ' |> List.filter f::nonBlank)
+    | _ => failwith "expected exactly one ':' in ocamldep output line"
+    };
+  bindD (Dep.path sourcePath) (fun () => mapD action processRawString)
 };
 
+/* Get only the dependencies on sources in the current library. */
+let ocamlDepCurrentSources sourcePath::sourcePath => {
+  let srcDir = Path.dirname sourcePath;
+  bindD
+    (ocamlDep sourcePath::sourcePath)
+    (
+      fun (original, deps) =>
+        mapD
+          (Dep.glob_listing (Glob.create dir::srcDir "*.re"))
+          (
+            fun sourcePaths => {
+              let sourceModules = List.map sourcePaths f::fileNameNoExtNoDir;
+              /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
+                 itself, which means that Foo either comes from a third-party module (which we can ignore
+                 here), or is a nested module from an `open`ed module, which ocamldep would have detected and
+                 returned in this list. */
+              List.filter deps f::(fun m => m != chopSuffixExn original) |>
+                List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
+            }
+          )
+    )
+};
+
+/* Like above, but include third-party deps too. */
+let ocamlDepIncludingThirdParty sourcePath::sourcePath => {
+  let srcDir = Path.dirname sourcePath;
+  bindD
+    (ocamlDep sourcePath::sourcePath)
+    (
+      fun (original, deps) =>
+        mapD
+          (
+            Dep.both
+              (Dep.subdirs dir::nodeModulesRoot)
+              (Dep.glob_listing (Glob.create dir::srcDir "*.re"))
+          )
+          (
+            fun (thirdPartyRoots, sourcePaths) => {
+              let sourceModules = List.map sourcePaths f::fileNameNoExtNoDir;
+              let thirdPartyModules =
+                List.map thirdPartyRoots f::(fun r => Path.basename r |> String.capitalize);
+              /* See comment in `ocamlDepCurrentSources` for this first filter. */
+              List.filter deps f::(fun m => m != chopSuffixExn original) |>
+                List.filter
+                  f::(
+                    fun m =>
+                      List.exists sourceModules f::(fun m' => m == m') ||
+                        List.exists thirdPartyModules f::(fun m' => m == m')
+                  )
+            }
+          )
+    )
+};
+
+/* Basically (ocamlDepIncludingThirdParty - ocamlDepCurrentSources) for all source files in the library in
+   question */
 let getThirdPartyDepsForLib srcDir::srcDir => {
   let getThirdPartyDepsForLib' sourcePaths =>
     mapD
       (
-        Dep.all (List.map sourcePaths f::(fun sourcePath => ocamlDepModules sourcePath::sourcePath))
+        Dep.all (
+          List.map
+            sourcePaths f::(fun sourcePath => ocamlDepIncludingThirdParty sourcePath::sourcePath)
+        )
       )
       (
         fun sourcePathsDeps => {
@@ -188,42 +195,11 @@ let sortTransitiveThirdParties =
       }
     );
 
-let ocamlDepModules2 sourcePath::sourcePath => {
-  let srcDir = Path.dirname sourcePath;
-  bindD
-    (Dep.both (Dep.path sourcePath) (Dep.glob_listing (Glob.create dir::srcDir "*.re")))
-    (
-      fun ((), sourcePaths) =>
-        mapD
-          (
-            Dep.action_stdout (
-              Dep.return (
-                bashf
-                  dir::srcDir
-                  "ocamldep -pp refmt -modules -ml-synonym .re -mli-synonym .rei -modules -one-line %s"
-                  (Path.basename sourcePath)
-              )
-            )
-          )
-          (
-            fun string => {
-              let sourceModules = List.map sourcePaths f::fileNameNoExtNoDir;
-              switch (String.strip string |> String.split on::':') {
-              | [original, deps] =>
-                String.split deps on::' ' |>
-                  List.filter f::nonBlank |>
-                  List.filter f::(fun m => m != chopSuffixExn original) |>
-                  List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
-              | _ => failwith "expected exactly one ':' in ocamldep output line"
-              }
-            }
-          )
-    )
-};
-
 let sortPathsTopologically dir::dir paths::paths => {
   let pathsAsModules = List.map paths f::(fun path => fileNameNoExtNoDir path);
-  let depsForPathsD = Dep.all (List.map paths f::(fun path => ocamlDepModules2 sourcePath::path));
+  let depsForPathsD = Dep.all (
+    List.map paths f::(fun path => ocamlDepCurrentSources sourcePath::path)
+  );
   mapD
     depsForPathsD
     (
@@ -307,7 +283,7 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
     let moduleAliasDep extension => relD dir::buildDir (libName ^ "." ^ extension);
     let compileEachSourcePath path =>
       mapD
-        (ocamlDepModules sourcePath::path)
+        (ocamlDepIncludingThirdParty sourcePath::path)
         (
           fun modules => {
             let thirdPartyModules =
