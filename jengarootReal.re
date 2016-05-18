@@ -59,16 +59,20 @@ let topSrcDir = rel dir::root "src";
 let ocamlDep sourcePath::sourcePath => {
   let srcDir = Path.dirname sourcePath;
   let action = Dep.action_stdout (
-    Dep.return (
-      bashf dir::srcDir "ocamldep -pp refmt -modules -one-line -impl %s" (Path.basename sourcePath)
-    )
+    mapD
+      (Dep.path sourcePath)
+      (
+        fun () =>
+          bashf
+            dir::srcDir "ocamldep -pp refmt -modules -one-line -impl %s" (Path.basename sourcePath)
+      )
   );
   let processRawString string =>
     switch (String.strip string |> String.split on::':') {
     | [original, deps] => (original, String.split deps on::' ' |> List.filter f::nonBlank)
     | _ => failwith "expected exactly one ':' in ocamldep output line"
     };
-  bindD (Dep.path sourcePath) (fun () => mapD action processRawString)
+  mapD action processRawString
 };
 
 /* Get only the dependencies on sources in the current library. */

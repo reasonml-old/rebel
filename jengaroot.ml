@@ -25,16 +25,18 @@ let ocamlDep ~sourcePath  =
   let srcDir = Path.dirname sourcePath in
   let action =
     Dep.action_stdout
-      (Dep.return
-         (bashf ~dir:srcDir "ocamldep -pp refmt -modules -one-line -impl %s"
-            (Path.basename sourcePath))) in
+      (mapD (Dep.path sourcePath)
+         (fun ()  ->
+            bashf ~dir:srcDir
+              "ocamldep -pp refmt -modules -one-line -impl %s"
+              (Path.basename sourcePath))) in
   let processRawString string =
     match (String.strip string) |> (String.split ~on:':') with
     | original::deps::[] ->
         (original,
           ((String.split deps ~on:' ') |> (List.filter ~f:nonBlank)))
     | _ -> failwith "expected exactly one ':' in ocamldep output line" in
-  bindD (Dep.path sourcePath) (fun ()  -> mapD action processRawString)
+  mapD action processRawString
 let ocamlDepCurrentSources ~sourcePath  =
   let srcDir = Path.dirname sourcePath in
   bindD (ocamlDep ~sourcePath)
