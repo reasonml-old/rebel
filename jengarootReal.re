@@ -123,8 +123,6 @@ let ocamlDepModules sourcePath::sourcePath => {
   bindD (Dep.subdirs dir::nodeModulesRoot) ocamlDepModules'
 };
 
-ocamlDepModules;
-
 let getThirdPartyDepsForLib srcDir::srcDir => {
   let getThirdPartyDepsForLib' sourcePaths =>
     mapD
@@ -142,8 +140,9 @@ let getThirdPartyDepsForLib srcDir::srcDir => {
   bindD (Dep.glob_listing (Glob.create dir::srcDir "*.re")) getThirdPartyDepsForLib'
 };
 
-getThirdPartyDepsForLib;
-
+/* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
+   sorted into [c, d, b, a] or [c, b, d, a], aka the ones being depended on will always come before the
+   dependent */
 let topologicalSort graph => {
   let graph = {contents: graph};
   let rec topologicalSort' currNode accum => {
@@ -167,6 +166,8 @@ let topologicalSort graph => {
   List.rev accum.contents
 };
 
+/* Figure out the order in which third-party libs should be compiled, based on their dependencies (the
+   depended is compiled before the dependent). */
 let sortTransitiveThirdParties =
   bindD
     (Dep.subdirs dir::nodeModulesRoot)
@@ -187,41 +188,50 @@ let sortTransitiveThirdParties =
       }
     );
 
-let sortPathsTopologically dir::dir paths::paths =>
-  /* don't remove this piece of code! This is the `ocamldep -sort`-less version. Except it doesn't traverse
-     the whole graph (see comment on topologicalSort) so we get free dead code elimination. But we do want
-     merlin to pick up newly added files, and DCE means they're not even compiled. We'll change
-     topologicalSort to traverse the whole graph soon. */
-  /* let pathsAsModules =
-       List.map paths f::(fun path => fileNameNoExtNoDir  path |> stringCapitalize);
-     let sourcePathsDepsD = Dep.all (List.map paths f::(fun path => ocamlDepModules sourcePath::path));
-     sourcePathsDepsD *>>| (
-       fun sourcePathsDeps =>
-         List.zip_exn pathsAsModules sourcePathsDeps |>
-           topologicalSort mainNode::"Main" |>
-           List.filter f::(fun m => List.exists pathsAsModules f::(fun m' => m' == m)) |>
-           List.map f::(fun m => rel dir::dir ( m ^ ".re"))
-     ) */
-  mapD
+let ocamlDepModules2 sourcePath::sourcePath => {
+  let srcDir = Path.dirname sourcePath;
+  bindD
+    (Dep.both (Dep.path sourcePath) (Dep.glob_listing (Glob.create dir::srcDir "*.re")))
     (
-      Dep.action_stdout (
+      fun ((), sourcePaths) =>
         mapD
-          (Dep.all_unit (List.map paths f::Dep.path))
           (
-            fun () => {
-              let pathsString = List.map paths f::Path.basename |> String.concat sep::" ";
-              bashf
-                dir::dir
-                "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -sort -one-line %s"
-                pathsString
+            Dep.action_stdout (
+              Dep.return (
+                bashf
+                  dir::srcDir
+                  "ocamldep -pp refmt -modules -ml-synonym .re -mli-synonym .rei -modules -one-line %s"
+                  (Path.basename sourcePath)
+              )
+            )
+          )
+          (
+            fun string => {
+              let sourceModules = List.map sourcePaths f::fileNameNoExtNoDir;
+              switch (String.strip string |> String.split on::':') {
+              | [original, deps] =>
+                String.split deps on::' ' |>
+                  List.filter f::nonBlank |>
+                  List.filter f::(fun m => m != chopSuffixExn original) |>
+                  List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
+              | _ => failwith "expected exactly one ':' in ocamldep output line"
+              }
             }
           )
-      )
     )
+};
+
+let sortPathsTopologically dir::dir paths::paths => {
+  let pathsAsModules = List.map paths f::(fun path => fileNameNoExtNoDir path);
+  let depsForPathsD = Dep.all (List.map paths f::(fun path => ocamlDepModules2 sourcePath::path));
+  mapD
+    depsForPathsD
     (
-      fun string =>
-        String.split string on::' ' |> List.filter f::nonBlank |> List.map f::(rel dir::dir)
-    );
+      fun depsForPaths =>
+        List.zip_exn pathsAsModules depsForPaths |>
+          topologicalSort |> List.map f::(fun m => rel dir::dir (m ^ ".re"))
+    )
+};
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
    into a foo.re file whose content is:

@@ -64,7 +64,6 @@ let ocamlDepModules ~sourcePath  =
                               cap))
          | _ -> failwith "expected exactly one ':' in ocamldep output line") in
   bindD (Dep.subdirs ~dir:nodeModulesRoot) ocamlDepModules'
-let _ = ocamlDepModules
 let getThirdPartyDepsForLib ~srcDir  =
   let getThirdPartyDepsForLib' sourcePaths =
     mapD
@@ -79,7 +78,6 @@ let getThirdPartyDepsForLib ~srcDir  =
                     List.for_all internalDeps ~f:(fun dep'  -> dep <> dep')))) in
   bindD (Dep.glob_listing (Glob.create ~dir:srcDir "*.re"))
     getThirdPartyDepsForLib'
-let _ = getThirdPartyDepsForLib
 let topologicalSort graph =
   let graph = { contents = graph } in
   let rec topologicalSort' currNode accum =
@@ -112,19 +110,41 @@ let sortTransitiveThirdParties =
                   ~f:(fun a  -> (Path.basename a) |> cap))
                thirdPartiesThirdPartyDeps)
               |> topologicalSort))
+let ocamlDepModules2 ~sourcePath  =
+  let srcDir = Path.dirname sourcePath in
+  bindD
+    (Dep.both (Dep.path sourcePath)
+       (Dep.glob_listing (Glob.create ~dir:srcDir "*.re")))
+    (fun ((),sourcePaths)  ->
+       mapD
+         (Dep.action_stdout
+            (Dep.return
+               (bashf ~dir:srcDir
+                  "ocamldep -pp refmt -modules -ml-synonym .re -mli-synonym .rei -modules -one-line %s"
+                  (Path.basename sourcePath))))
+         (fun string  ->
+            let sourceModules = List.map sourcePaths ~f:fileNameNoExtNoDir in
+            match (String.strip string) |> (String.split ~on:':') with
+            | original::deps::[] ->
+                (((String.split deps ~on:' ') |> (List.filter ~f:nonBlank))
+                   |>
+                   (List.filter ~f:(fun m  -> m <> (chopSuffixExn original))))
+                  |>
+                  (List.filter
+                     ~f:(fun m  ->
+                           List.exists sourceModules ~f:(fun m'  -> m = m')))
+            | _ ->
+                failwith "expected exactly one ':' in ocamldep output line"))
 let sortPathsTopologically ~dir  ~paths  =
-  mapD
-    (Dep.action_stdout
-       (mapD (Dep.all_unit (List.map paths ~f:Dep.path))
-          (fun ()  ->
-             let pathsString =
-               (List.map paths ~f:Path.basename) |> (String.concat ~sep:" ") in
-             bashf ~dir
-               "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -sort -one-line %s"
-               pathsString)))
-    (fun string  ->
-       ((String.split string ~on:' ') |> (List.filter ~f:nonBlank)) |>
-         (List.map ~f:(rel ~dir)))
+  let pathsAsModules =
+    List.map paths ~f:(fun path  -> fileNameNoExtNoDir path) in
+  let depsForPathsD =
+    Dep.all
+      (List.map paths ~f:(fun path  -> ocamlDepModules2 ~sourcePath:path)) in
+  mapD depsForPathsD
+    (fun depsForPaths  ->
+       ((List.zip_exn pathsAsModules depsForPaths) |> topologicalSort) |>
+         (List.map ~f:(fun m  -> rel ~dir (m ^ ".re"))))
 let moduleAliasFileScheme ~buildDir  ~sourceModules  ~libName  =
   let name extension = rel ~dir:buildDir (libName ^ ("." ^ extension)) in
   let sourcePath = name "re" in
