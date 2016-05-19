@@ -114,8 +114,11 @@ let ocamlDepIncludingThirdParty sourcePath::sourcePath => {
           (
             fun (thirdPartyRoots, sourcePaths) => {
               let sourceModules = List.map sourcePaths f::fileNameNoExtNoDir;
-              let thirdPartyModules =
-                List.map thirdPartyRoots f::(fun r => Path.basename r |> String.capitalize);
+              let thirdPartyModules = [
+                /* Special-case js_of_ocaml as a magical global. */
+                "Js",
+                ...List.map thirdPartyRoots f::(fun r => Path.basename r |> String.capitalize)
+              ];
               /* See comment in `ocamlDepCurrentSources` for this first filter. */
               List.filter deps f::(fun m => m != chopSuffixExn original) |>
                 List.filter
@@ -352,6 +355,11 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
               thirdPartiesCmisDep,
               ...firstPartyModuleDeps
             ];
+            /* Only include js_of_ocaml in the modules search path if the current source mentions that Js
+               module. Might speed up some things? */
+            let jsooIncludeString =
+              List.exists thirdPartyModules f::(fun m => m == "Js") ?
+                Printf.sprintf "-I %s %s/js_of_ocaml.cma" jsooLocation jsooLocation : "";
             let action =
               bashf
                 dir::buildDir
@@ -364,10 +372,9 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
                    path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma -I ./ -I ../fooDependsOnMe -I \
                    ../fooDependsOnMeToo -o foo__CurrentSourcePath -intf-suffix rei -c -impl \
                    path/to/CurrentSourcePath.re */
-                "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s -I %s %s/js_of_ocaml.cma -I %s %s -o %s -intf-suffix rei -c -impl %s"
+                "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
                 (cap libName)
-                jsooLocation
-                jsooLocation
+                jsooIncludeString
                 (ts buildDir)
                 (
                   List.map
