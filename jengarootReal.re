@@ -41,6 +41,8 @@ let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
 
 let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
 
+let pathToModule path => fileNameNoExtNoDir path |> cap;
+
 /* this jengaroot-specific helpers */
 let topLibName = "top";
 
@@ -86,7 +88,7 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
           (Dep.glob_listing (Glob.create dir::srcDir "*.re"))
           (
             fun sourcePaths => {
-              let sourceModules = List.map sourcePaths f::fileNameNoExtNoDir;
+              let sourceModules = List.map sourcePaths f::pathToModule;
               /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
                  itself, which means that Foo either comes from a third-party module (which we can ignore
                  here), or is a nested module from an `open`ed module, which ocamldep would have detected and
@@ -113,11 +115,11 @@ let ocamlDepIncludingThirdParty sourcePath::sourcePath => {
           )
           (
             fun (thirdPartyRoots, sourcePaths) => {
-              let sourceModules = List.map sourcePaths f::fileNameNoExtNoDir;
+              let sourceModules = List.map sourcePaths f::pathToModule;
               let thirdPartyModules = [
                 /* Special-case js_of_ocaml as a magical global. */
                 "Js",
-                ...List.map thirdPartyRoots f::(fun r => Path.basename r |> String.capitalize)
+                ...List.map thirdPartyRoots f::(fun r => Path.basename r |> cap)
               ];
               /* See comment in `ocamlDepCurrentSources` for this first filter. */
               List.filter deps f::(fun m => m != chopSuffixExn original) |>
@@ -203,7 +205,9 @@ let sortTransitiveThirdParties =
     );
 
 let sortPathsTopologically dir::dir paths::paths => {
-  let pathsAsModules = List.map paths f::(fun path => fileNameNoExtNoDir path);
+  let pathsAsModulesOriginalCapitalization =
+    List.map paths f::(fun path => fileNameNoExtNoDir path);
+  let pathsAsModules = List.map pathsAsModulesOriginalCapitalization f::cap;
   let depsForPathsD = Dep.all (
     List.map paths f::(fun path => ocamlDepCurrentSources sourcePath::path)
   );
@@ -212,7 +216,16 @@ let sortPathsTopologically dir::dir paths::paths => {
     (
       fun depsForPaths =>
         List.zip_exn pathsAsModules depsForPaths |>
-          topologicalSort |> List.map f::(fun m => rel dir::dir (m ^ ".re"))
+          topologicalSort |>
+          List.map
+            f::(
+              fun m => {
+                let fileNameOriginalCapitalization =
+                  List.exists pathsAsModulesOriginalCapitalization f::(fun m' => m == m') ?
+                    m : uncap m;
+                rel dir::dir (fileNameOriginalCapitalization ^ ".re")
+              }
+            )
     )
 };
 
@@ -226,19 +239,16 @@ let sortPathsTopologically dir::dir paths::paths => {
    of Foo__B thanks to the pre-opened foo.re. But when these files are used by other libraries (which aren't
    compiled with foo.re pre-opened of course), they won't see module A or B, only Foo__A and Foo__B, aka in
    practice, they simply won't see them. This effectively means we've implemented namespacing! */
-let moduleAliasFileScheme buildDir::buildDir sourceModules::sourceModules libName::libName => {
+let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::libName => {
   let name extension => rel dir::buildDir (libName ^ "." ^ extension);
   let sourcePath = name "re";
   let cmo = name "cmo";
   let cmi = name "cmi";
   let cmt = name "cmt";
   let fileContent =
-    List.map
-      sourceModules
-      f::(
-        fun moduleName =>
-          Printf.sprintf "let module %s = %s__%s;\n" moduleName (cap libName) moduleName
-      ) |>
+    List.map sourcePaths f::fileNameNoExtNoDir |>
+      List.map
+        f::(fun file => Printf.sprintf "let module %s = %s__%s;\n" (cap file) (cap libName) file) |>
       String.concat sep::"";
   let action =
     bashf
@@ -288,6 +298,7 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
     /* This is the module alias file generated through `moduleAliasFileScheme`, that we said we're gonna `-open`
        during `ocamlc` */
     let moduleAliasDep extension => relD dir::buildDir (libName ^ "." ^ extension);
+    let firstPartyModules = List.map sourcePaths f::pathToModule;
     let compileEachSourcePath path =>
       mapD
         (ocamlDepIncludingThirdParty sourcePath::path)
@@ -295,19 +306,23 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
           fun modules => {
             let thirdPartyModules =
               List.filter
-                modules
-                f::(
-                  fun m => List.for_all sourcePaths f::(fun path => fileNameNoExtNoDir path != m)
-                );
-            let firstPartyModules =
+                modules f::(fun m => List.for_all firstPartyModules f::(fun m' => m' != m));
+            /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
+               to recompile the dependent modules. Win. */
+            let firstPartyCmisDeps =
               List.filter
-                modules
-                f::(fun m => List.exists sourcePaths f::(fun path => fileNameNoExtNoDir path == m));
-            let firstPartyModuleDeps =
-              List.map
-                firstPartyModules
-                /* compiling here only needs cmi */
-                f::(fun m => relD dir::buildDir (libName ^ "__" ^ m ^ ".cmi"));
+                sourcePaths
+                f::(
+                  fun path => {
+                    let pathAsModule = pathToModule path;
+                    List.exists modules f::(fun m => m == pathAsModule)
+                  }
+                ) |>
+                List.map
+                  f::(
+                    fun path =>
+                      relD dir::buildDir (libName ^ "__" ^ fileNameNoExtNoDir path ^ ".cmi")
+                  );
             let outNameNoExtNoDir = libName ^ "__" ^ fileNameNoExtNoDir path;
             /* Compiling the current source file depends on all of the cmis of all its third-party libraries'
                source files being compiled. This is very coarse since in reality, we only depend on a few source
@@ -353,7 +368,7 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
               moduleAliasDep "cmt",
               moduleAliasDep "re",
               thirdPartiesCmisDep,
-              ...firstPartyModuleDeps
+              ...firstPartyCmisDeps
             ];
             /* Only include js_of_ocaml in the modules search path if the current source mentions that Js
                module. Might speed up some things? */
@@ -536,10 +551,7 @@ let compileLibScheme
           (sortPathsTopologically dir::srcDir paths::unsortedPaths)
           (
             fun sortedPaths => Scheme.all [
-              moduleAliasFileScheme
-                buildDir::buildDir
-                libName::libName
-                sourceModules::(List.map unsortedPaths f::fileNameNoExtNoDir),
+              moduleAliasFileScheme buildDir::buildDir libName::libName sourcePaths::unsortedPaths,
               compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::unsortedPaths,
               isTopLevelLib ?
                 /* if we're at the final, top level compilation, there's no need to build a cma output (and
