@@ -23,8 +23,8 @@ Approximate directory structure:
     ├── a.re
     ├── b.re
     ├── c.re
-    ├── main.re
-    └── test.re
+    ├── Index.re
+    └── Test.re
 ```
 
 As of today, works on latest locally pinned jenga, ocaml v4.02.3, and whatever `opam update` dependencies versions for jenga.
