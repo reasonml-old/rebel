@@ -67,10 +67,10 @@ alias f="refmt -parse re -print ml jengaroot_real.re \
 (The last `huh` is exposed from [BetterErrors](https://github.com/chenglou/BetterErrors). If you don't have it, just remove that part.)
 
 **Things to test**
-- Support for source files that are (uncapitalized, Capitalized) and (snake_cased, camelCased). Support third-party library names of the latter pair (npm modules can no longer be capitalized).
+- Support for source/interface interface files that are (uncapitalized, Capitalized) and (snake_cased, camelCased). Support third-party library names of the latter pair (npm modules can no longer be capitalized).
 - Compiles dangling unused source files and unused dependencies (for merlin editor integration, e.g. add a new dependency, compile, then start autocompleting that previously unused module).
 - Dependencies that contain the same source file names.
 - Third-party sources with unique names.
 - Compiling A and B that both require C.
-- Sources with .rei interface files.
+- .rei interface files referencing third-party modules that source files don't (extra dependencies).
 - `open`ing a third-party library to refer to its module that happens to have the same name as one of our first-party modules.
