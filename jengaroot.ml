@@ -76,7 +76,7 @@ let getThirdPartyDepsForLibNoJsoo ~srcDir  =
          (List.map sourcePaths
             ~f:(fun sourcePath  -> ocamlDepIncludingThirdParty ~sourcePath)))
       (fun sourcePathsDeps  ->
-         let internalDeps = List.map sourcePaths ~f:fileNameNoExtNoDir in
+         let internalDeps = List.map sourcePaths ~f:pathToModule in
          (((List.concat sourcePathsDeps) |>
              (List.filter ~f:(fun dep  -> dep <> "Js")))
             |> List.dedup)

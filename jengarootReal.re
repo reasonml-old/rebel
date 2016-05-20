@@ -147,7 +147,7 @@ let getThirdPartyDepsForLibNoJsoo srcDir::srcDir => {
       )
       (
         fun sourcePathsDeps => {
-          let internalDeps = List.map sourcePaths f::fileNameNoExtNoDir;
+          let internalDeps = List.map sourcePaths f::pathToModule;
           List.concat sourcePathsDeps |>
             /* Filter out Js, from js_of_ocaml. See callsite of `getThirdPartyDepsForLibNoJsoo`. */
             List.filter f::(fun dep => dep != "Js") |>
