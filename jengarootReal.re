@@ -134,10 +134,10 @@ let ocamlDepIncludingThirdParty sourcePath::sourcePath => {
     )
 };
 
-/* Basically (ocamlDepIncludingThirdParty - ocamlDepCurrentSources) for all source files in the library in
-   question */
-let getThirdPartyDepsForLib srcDir::srcDir => {
-  let getThirdPartyDepsForLib' sourcePaths =>
+/* Basically (ocamlDepIncludingThirdParty - ocamlDepCurrentSources - {Js}) for all source files in the library
+   in question */
+let getThirdPartyDepsForLibNoJsoo srcDir::srcDir => {
+  let getThirdPartyDepsForLibNoJsoo' sourcePaths =>
     mapD
       (
         Dep.all (
@@ -149,11 +149,13 @@ let getThirdPartyDepsForLib srcDir::srcDir => {
         fun sourcePathsDeps => {
           let internalDeps = List.map sourcePaths f::fileNameNoExtNoDir;
           List.concat sourcePathsDeps |>
+            /* Filter out Js, from js_of_ocaml. See callsite of `getThirdPartyDepsForLibNoJsoo`. */
+            List.filter f::(fun dep => dep != "Js") |>
             List.dedup |>
             List.filter f::(fun dep => List.for_all internalDeps f::(fun dep' => dep != dep'))
         }
       );
-  bindD (Dep.glob_listing (Glob.create dir::srcDir "*.re")) getThirdPartyDepsForLib'
+  bindD (Dep.glob_listing (Glob.create dir::srcDir "*.re")) getThirdPartyDepsForLibNoJsoo'
 };
 
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
@@ -191,7 +193,8 @@ let sortTransitiveThirdParties =
       fun thirdPartyRoots => {
         let thirdPartySrcDirs = List.map thirdPartyRoots f::(fun r => rel dir::r "src");
         let thirdPartiesThirdPartyDepsD = Dep.all (
-          List.map thirdPartySrcDirs f::(fun srcDir => getThirdPartyDepsForLib srcDir::srcDir)
+          List.map
+            thirdPartySrcDirs f::(fun srcDir => getThirdPartyDepsForLibNoJsoo srcDir::srcDir)
         );
         mapD
           thirdPartiesThirdPartyDepsD
@@ -307,6 +310,14 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
             let thirdPartyModules =
               List.filter
                 modules f::(fun m => List.for_all firstPartyModules f::(fun m' => m' != m));
+            /* Only include js_of_ocaml in the modules search path if the current source mentions that Js
+               module. Might speed up some things? This is used in the `action` below. */
+            let jsooIncludeString =
+              List.exists thirdPartyModules f::(fun m => m == "Js") ?
+                Printf.sprintf "-I %s %s/js_of_ocaml.cma" jsooLocation jsooLocation : "";
+            /* Remove this now. We use it to form dependencies below. Js is a special one and doesn't depend
+               on any file in the directories. */
+            let thirdPartyModules = List.filter thirdPartyModules f::(fun m => m != "Js");
             /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
                to recompile the dependent modules. Win. */
             let firstPartyCmisDeps =
@@ -370,11 +381,6 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
               thirdPartiesCmisDep,
               ...firstPartyCmisDeps
             ];
-            /* Only include js_of_ocaml in the modules search path if the current source mentions that Js
-               module. Might speed up some things? */
-            let jsooIncludeString =
-              List.exists thirdPartyModules f::(fun m => m == "Js") ?
-                Printf.sprintf "-I %s %s/js_of_ocaml.cma" jsooLocation jsooLocation : "";
             let action =
               bashf
                 dir::buildDir

@@ -69,20 +69,23 @@ let ocamlDepIncludingThirdParty ~sourcePath  =
                        (List.exists sourceModules ~f:(fun m'  -> m = m')) ||
                          (List.exists thirdPartyModules
                             ~f:(fun m'  -> m = m'))))))
-let getThirdPartyDepsForLib ~srcDir  =
-  let getThirdPartyDepsForLib' sourcePaths =
+let getThirdPartyDepsForLibNoJsoo ~srcDir  =
+  let getThirdPartyDepsForLibNoJsoo' sourcePaths =
     mapD
       (Dep.all
          (List.map sourcePaths
             ~f:(fun sourcePath  -> ocamlDepIncludingThirdParty ~sourcePath)))
       (fun sourcePathsDeps  ->
          let internalDeps = List.map sourcePaths ~f:fileNameNoExtNoDir in
-         ((List.concat sourcePathsDeps) |> List.dedup) |>
+         (((List.concat sourcePathsDeps) |>
+             (List.filter ~f:(fun dep  -> dep <> "Js")))
+            |> List.dedup)
+           |>
            (List.filter
               ~f:(fun dep  ->
                     List.for_all internalDeps ~f:(fun dep'  -> dep <> dep')))) in
   bindD (Dep.glob_listing (Glob.create ~dir:srcDir "*.re"))
-    getThirdPartyDepsForLib'
+    getThirdPartyDepsForLibNoJsoo'
 let topologicalSort graph =
   let graph = { contents = graph } in
   let rec topologicalSort' currNode accum =
@@ -107,7 +110,7 @@ let sortTransitiveThirdParties =
        let thirdPartiesThirdPartyDepsD =
          Dep.all
            (List.map thirdPartySrcDirs
-              ~f:(fun srcDir  -> getThirdPartyDepsForLib ~srcDir)) in
+              ~f:(fun srcDir  -> getThirdPartyDepsForLibNoJsoo ~srcDir)) in
        mapD thirdPartiesThirdPartyDepsD
          (fun thirdPartiesThirdPartyDeps  ->
             (List.zip_exn
@@ -176,6 +179,14 @@ let compileSourcesScheme ~buildDir  ~libName  ~sourcePaths  =
              List.filter modules
                ~f:(fun m  ->
                      List.for_all firstPartyModules ~f:(fun m'  -> m' <> m)) in
+           let jsooIncludeString =
+             match List.exists thirdPartyModules ~f:(fun m  -> m = "Js") with
+             | true  ->
+                 Printf.sprintf "-I %s %s/js_of_ocaml.cma" jsooLocation
+                   jsooLocation
+             | false  -> "" in
+           let thirdPartyModules =
+             List.filter thirdPartyModules ~f:(fun m  -> m <> "Js") in
            let firstPartyCmisDeps =
              (List.filter sourcePaths
                 ~f:(fun path  ->
@@ -219,12 +230,6 @@ let compileSourcesScheme ~buildDir  ~libName  ~sourcePaths  =
                (moduleAliasDep "cmo") :: (moduleAliasDep "cmt") ::
                (moduleAliasDep "re") :: thirdPartiesCmisDep ::
                firstPartyCmisDeps) in
-           let jsooIncludeString =
-             match List.exists thirdPartyModules ~f:(fun m  -> m = "Js") with
-             | true  ->
-                 Printf.sprintf "-I %s %s/js_of_ocaml.cma" jsooLocation
-                   jsooLocation
-             | false  -> "" in
            let action =
              bashf ~dir:buildDir
                "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
