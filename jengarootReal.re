@@ -43,6 +43,8 @@ let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
 
 let pathToModule path => fileNameNoExtNoDir path |> cap;
 
+let isInterface path => String.is_suffix (Path.basename path) suffix::".rei";
+
 /* this jengaroot-specific helpers */
 let topLibName = "top";
 
@@ -60,13 +62,17 @@ let topSrcDir = rel dir::root "src";
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate */
 let ocamlDep sourcePath::sourcePath => {
   let srcDir = Path.dirname sourcePath;
+  let flag = isInterface sourcePath ? "-intf" : "-impl";
   let action = Dep.action_stdout (
     mapD
       (Dep.path sourcePath)
       (
         fun () =>
           bashf
-            dir::srcDir "ocamldep -pp refmt -modules -one-line -impl %s" (Path.basename sourcePath)
+            dir::srcDir
+            "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s"
+            flag
+            (Path.basename sourcePath)
       )
   );
   let processRawString string =>
@@ -85,10 +91,11 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
     (
       fun (original, deps) =>
         mapD
-          (Dep.glob_listing (Glob.create dir::srcDir "*.re"))
+          (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
           (
             fun sourcePaths => {
-              let sourceModules = List.map sourcePaths f::pathToModule;
+              /* Dedupe, because we might have foo.re and foo.rei */
+              let sourceModules = List.map sourcePaths f::pathToModule |> List.dedup;
               /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
                  itself, which means that Foo either comes from a third-party module (which we can ignore
                  here), or is a nested module from an `open`ed module, which ocamldep would have detected and
@@ -111,11 +118,12 @@ let ocamlDepIncludingThirdParty sourcePath::sourcePath => {
           (
             Dep.both
               (Dep.subdirs dir::nodeModulesRoot)
-              (Dep.glob_listing (Glob.create dir::srcDir "*.re"))
+              (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
           )
           (
             fun (thirdPartyRoots, sourcePaths) => {
-              let sourceModules = List.map sourcePaths f::pathToModule;
+              /* Dedupe, because we might have foo.re and foo.rei */
+              let sourceModules = List.map sourcePaths f::pathToModule |> List.dedup;
               let thirdPartyModules = [
                 /* Special-case js_of_ocaml as a magical global. */
                 "Js",
@@ -147,7 +155,8 @@ let getThirdPartyDepsForLibNoJsoo srcDir::srcDir => {
       )
       (
         fun sourcePathsDeps => {
-          let internalDeps = List.map sourcePaths f::pathToModule;
+          /* Dedupe, because we might have foo.re and foo.rei */
+          let internalDeps = List.map sourcePaths f::pathToModule |> List.dedup;
           List.concat sourcePathsDeps |>
             /* Filter out Js, from js_of_ocaml. See callsite of `getThirdPartyDepsForLibNoJsoo`. */
             List.filter f::(fun dep => dep != "Js") |>
@@ -155,7 +164,7 @@ let getThirdPartyDepsForLibNoJsoo srcDir::srcDir => {
             List.filter f::(fun dep => List.for_all internalDeps f::(fun dep' => dep != dep'))
         }
       );
-  bindD (Dep.glob_listing (Glob.create dir::srcDir "*.re")) getThirdPartyDepsForLibNoJsoo'
+  bindD (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}")) getThirdPartyDepsForLibNoJsoo'
 };
 
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
@@ -242,14 +251,14 @@ let sortPathsTopologically dir::dir paths::paths => {
    of Foo__B thanks to the pre-opened foo.re. But when these files are used by other libraries (which aren't
    compiled with foo.re pre-opened of course), they won't see module A or B, only Foo__A and Foo__B, aka in
    practice, they simply won't see them. This effectively means we've implemented namespacing! */
-let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::libName => {
+let moduleAliasFileScheme buildDir::buildDir sourceNotInterfacePaths::sourceNotInterfacePaths libName::libName => {
   let name extension => rel dir::buildDir (libName ^ "." ^ extension);
   let sourcePath = name "re";
   let cmo = name "cmo";
   let cmi = name "cmi";
   let cmt = name "cmt";
   let fileContent =
-    List.map sourcePaths f::fileNameNoExtNoDir |>
+    List.map sourceNotInterfacePaths f::fileNameNoExtNoDir |>
       List.map
         f::(fun file => Printf.sprintf "let module %s = %s__%s;\n" (cap file) (cap libName) file) |>
       String.concat sep::"";
@@ -283,6 +292,7 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
       "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
       (Path.basename sourcePath)
       (Path.basename cmo);
+  /* TODO: do we even need the cmo file here? */
   let compileRule =
     Rule.create targets::[cmo, cmi, cmt] (mapD (Dep.path sourcePath) (fun () => action));
   let contentRule =
@@ -306,10 +316,19 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
       mapD
         (ocamlDepIncludingThirdParty sourcePath::path)
         (
-          fun modules => {
+          fun depModules => {
+            let isInterface' = isInterface path;
+            let hasInterface =
+              not isInterface' &&
+                List.exists
+                  sourcePaths
+                  f::(
+                    fun path' =>
+                      isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path
+                  );
             let thirdPartyModules =
               List.filter
-                modules f::(fun m => List.for_all firstPartyModules f::(fun m' => m' != m));
+                depModules f::(fun m => List.for_all firstPartyModules f::(fun m' => m' != m));
             /* Only include js_of_ocaml in the modules search path if the current source mentions that Js
                module. Might speed up some things? This is used in the `action` below. */
             let jsooIncludeString =
@@ -326,7 +345,7 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
                 f::(
                   fun path => {
                     let pathAsModule = pathToModule path;
-                    List.exists modules f::(fun m => m == pathAsModule)
+                    List.exists depModules f::(fun m => m == pathAsModule)
                   }
                 ) |>
                 List.map
@@ -334,6 +353,17 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
                     fun path =>
                       relD dir::buildDir (libName ^ "__" ^ fileNameNoExtNoDir path ^ ".cmi")
                   );
+            let firstPartyCmisDeps =
+              if (not isInterface' && hasInterface) {
+                [
+                  /* We're a source file with an interface; include our own cmi as a dependency (our interface
+                     file should be compile before ourselves). */
+                  relD dir::buildDir (libName ^ "__" ^ fileNameNoExtNoDir path ^ ".cmi"),
+                  ...firstPartyCmisDeps
+                ]
+              } else {
+                firstPartyCmisDeps
+              };
             let outNameNoExtNoDir = libName ^ "__" ^ fileNameNoExtNoDir path;
             /* Compiling the current source file depends on all of the cmis of all its third-party libraries'
                source files being compiled. This is very coarse since in reality, we only depend on a few source
@@ -351,7 +381,10 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
                       (
                         Dep.glob_listing (
                           Glob.create
-                            dir::(rel dir::(rel dir::nodeModulesRoot libName) "src") "*.re"
+                            /* No need to glob `.rei`s here. We're only getting the file names to construct cmi
+                               paths. */
+                            dir::(rel dir::(rel dir::nodeModulesRoot libName) "src")
+                            "*.{re}"
                         )
                       )
                       (
@@ -381,6 +414,14 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
               thirdPartiesCmisDep,
               ...firstPartyCmisDeps
             ];
+            let targets =
+              if isInterface' {
+                [cmi]
+              } else if hasInterface {
+                [cmo, cmt]
+              } else {
+                [/* Source file without corresponding interface file beside it. */ cmi, cmo, cmt]
+              };
             let action =
               bashf
                 dir::buildDir
@@ -389,11 +430,15 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
 
                    -c: compile only, don't link yet.
                    */
-                /* Example command: ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open Foo -I \
-                   path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma -I ./ -I ../fooDependsOnMe -I \
-                   ../fooDependsOnMeToo -o foo__CurrentSourcePath -intf-suffix rei -c -impl \
-                   path/to/CurrentSourcePath.re */
-                "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -intf-suffix rei -c -impl %s"
+                (
+                  isInterface' ?
+                    "ocamlc -pp refmt -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf %s" :
+                    /* Example command: ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open Foo -I \
+                       path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma -I ./ -I ../fooDependsOnMe -I \
+                       ../fooDependsOnMeToo -o foo__CurrentSourcePath -intf-suffix .rei -c -impl \
+                       path/to/CurrentSourcePath.re */
+                    "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf-suffix .rei -impl %s"
+                )
                 (cap libName)
                 jsooIncludeString
                 (ts buildDir)
@@ -409,7 +454,7 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
                 )
                 outNameNoExtNoDir
                 (Path.reach_from dir::buildDir path);
-            Rule.create targets::[cmi, cmo, cmt] (mapD deps (fun () => action))
+            Rule.create targets::targets (mapD deps (fun () => action))
           }
         );
     Scheme.rules_dep (Dep.all (List.map sourcePaths f::compileEachSourcePath))
@@ -550,14 +595,16 @@ let compileLibScheme
     libName::libName
     buildDir::buildDir => Scheme.dep (
   bindD
-    (Dep.glob_listing (Glob.create dir::srcDir "*.re"))
+    (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
     (
-      fun unsortedPaths =>
+      fun unsortedPaths => {
+        let sourceNotInterfacePaths = List.filter unsortedPaths f::(fun path => not (isInterface path));
         mapD
           (sortPathsTopologically dir::srcDir paths::unsortedPaths)
           (
             fun sortedPaths => Scheme.all [
-              moduleAliasFileScheme buildDir::buildDir libName::libName sourcePaths::unsortedPaths,
+              moduleAliasFileScheme
+                buildDir::buildDir libName::libName sourceNotInterfacePaths::sourceNotInterfacePaths,
               compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::unsortedPaths,
               isTopLevelLib ?
                 /* if we're at the final, top level compilation, there's no need to build a cma output (and
@@ -567,6 +614,7 @@ let compileLibScheme
                 compileCmaScheme buildDir::buildDir libName::libName sortedSourcePaths::sortedPaths
             ]
           )
+      }
     )
 );
 
