@@ -58,6 +58,9 @@ let buildDirRoot = rel dir::root "_build";
 
 let topSrcDir = rel dir::root "src";
 
+/* Dep.subdirs only looks for directories, not symlinks. */
+let depsubdirs dir::dir => Dep.glob_listing (Glob.create dir::dir kinds::[`Directory, `Link] "*");
+
 /* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate */
 let ocamlDep sourcePath::sourcePath => {
@@ -117,7 +120,7 @@ let ocamlDepIncludingThirdParty sourcePath::sourcePath => {
         mapD
           (
             Dep.both
-              (Dep.subdirs dir::nodeModulesRoot)
+              (depsubdirs dir::nodeModulesRoot)
               (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
           )
           (
@@ -197,7 +200,7 @@ let topologicalSort graph => {
    depended is compiled before the dependent). */
 let sortTransitiveThirdParties =
   bindD
-    (Dep.subdirs dir::nodeModulesRoot)
+    (depsubdirs dir::nodeModulesRoot)
     (
       fun thirdPartyRoots => {
         let thirdPartySrcDirs = List.map thirdPartyRoots f::(fun r => rel dir::r "src");
@@ -251,7 +254,10 @@ let sortPathsTopologically dir::dir paths::paths => {
    of Foo__B thanks to the pre-opened foo.re. But when these files are used by other libraries (which aren't
    compiled with foo.re pre-opened of course), they won't see module A or B, only Foo__A and Foo__B, aka in
    practice, they simply won't see them. This effectively means we've implemented namespacing! */
-let moduleAliasFileScheme buildDir::buildDir sourceNotInterfacePaths::sourceNotInterfacePaths libName::libName => {
+let moduleAliasFileScheme
+    buildDir::buildDir
+    sourceNotInterfacePaths::sourceNotInterfacePaths
+    libName::libName => {
   let name extension => rel dir::buildDir (libName ^ "." ^ extension);
   let sourcePath = name "re";
   let cmo = name "cmo";
@@ -598,13 +604,16 @@ let compileLibScheme
     (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
     (
       fun unsortedPaths => {
-        let sourceNotInterfacePaths = List.filter unsortedPaths f::(fun path => not (isInterface path));
+        let sourceNotInterfacePaths =
+          List.filter unsortedPaths f::(fun path => not (isInterface path));
         mapD
           (sortPathsTopologically dir::srcDir paths::unsortedPaths)
           (
             fun sortedPaths => Scheme.all [
               moduleAliasFileScheme
-                buildDir::buildDir libName::libName sourceNotInterfacePaths::sourceNotInterfacePaths,
+                buildDir::buildDir
+                libName::libName
+                sourceNotInterfacePaths::sourceNotInterfacePaths,
               compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::unsortedPaths,
               isTopLevelLib ?
                 /* if we're at the final, top level compilation, there's no need to build a cma output (and
@@ -673,7 +682,7 @@ let scheme dir::dir => {
   if (dir == root) {
     let dotMerlinDefaultScheme = Scheme.rules_dep (
       mapD
-        (Dep.subdirs dir::nodeModulesRoot)
+        (depsubdirs dir::nodeModulesRoot)
         (
           fun thirdPartyRoots =>
             List.map

@@ -23,6 +23,8 @@ let libraryFileName = "lib.cma"
 let nodeModulesRoot = rel ~dir:root "node_modules"
 let buildDirRoot = rel ~dir:root "_build"
 let topSrcDir = rel ~dir:root "src"
+let depsubdirs ~dir  =
+  Dep.glob_listing (Glob.create ~dir ~kinds:[`Directory; `Link] "*")
 let ocamlDep ~sourcePath  =
   let srcDir = Path.dirname sourcePath in
   let flag =
@@ -59,7 +61,7 @@ let ocamlDepIncludingThirdParty ~sourcePath  =
   bindD (ocamlDep ~sourcePath)
     (fun (original,deps)  ->
        mapD
-         (Dep.both (Dep.subdirs ~dir:nodeModulesRoot)
+         (Dep.both (depsubdirs ~dir:nodeModulesRoot)
             (Dep.glob_listing (Glob.create ~dir:srcDir "*.{re,rei}")))
          (fun (thirdPartyRoots,sourcePaths)  ->
             let sourceModules =
@@ -109,7 +111,7 @@ let topologicalSort graph =
     topologicalSort' (fst (List.hd_exn graph.contents)) accum done;
   List.rev accum.contents
 let sortTransitiveThirdParties =
-  bindD (Dep.subdirs ~dir:nodeModulesRoot)
+  bindD (depsubdirs ~dir:nodeModulesRoot)
     (fun thirdPartyRoots  ->
        let thirdPartySrcDirs =
          List.map thirdPartyRoots ~f:(fun r  -> rel ~dir:r "src") in
@@ -392,7 +394,7 @@ let scheme ~dir  =
   then
     (let dotMerlinDefaultScheme =
        Scheme.rules_dep
-         (mapD (Dep.subdirs ~dir:nodeModulesRoot)
+         (mapD (depsubdirs ~dir:nodeModulesRoot)
             (fun thirdPartyRoots  ->
                List.map thirdPartyRoots
                  ~f:(fun path  ->
