@@ -1,9 +1,14 @@
+
 open Yojson.Basic;
 
-let packageJson = from_file "./package.json";
+let packageJsonPath = Sys.argv.(1);
 
-let asd = Util.filter_member "dependencies" [packageJson] |> Util.filter_assoc |> List.hd;
-
-let () = print_endline @@ String.concat "\n" @@ List.map fst asd;
+[from_file packageJsonPath] |>
+  Util.filter_member "dependencies" |>
+  Util.filter_assoc |>
+  List.hd |>
+  List.map fst |>
+  String.concat "\n" |>
+  print_endline;
 
 /* ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl extractDeps.re -o extractDeps 2>&1 | huh */
