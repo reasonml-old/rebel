@@ -38,6 +38,15 @@ Most of these are for the ease of the prototype, but they might or might not be 
 - Third-party deps names are uncapitalized (can contain upper-case in the whole word).
 - Every library (including the current top one) needs a package.json that lists its dependencies, if any.
 
+## For Consumers
+
+- `npm install --save-dev jengaboot`
+- Write some files in your `src/`, or install some compliant (see above) npm packages.
+- `./node_modules/.bin/boot`
+
+
+## For Developers
+
 **To run**: `jenga`. Then see the output from `_build/top/app.out`, and/or open up `index.html` to see the compiled-to-js version.
 
 **To develop the jengaroot yourself**: have all the [Reason](https://github.com/facebook/reason) toolchain installed. Compile to jengaroot.ml. Here's a convenient compile & prettify command I've temporarily included in my bashrc/zshrc:

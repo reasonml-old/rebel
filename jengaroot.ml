@@ -369,28 +369,27 @@ let scheme ~dir  =
   if dir = root
   then
     (let packageJsonPath = rel ~dir:root "package.json" in
-     ignore packageJsonPath;
-     (let dotMerlinDefaultScheme =
-        Scheme.rules_dep
-          (mapD (getThirdPartyDepsForLib ~ignoreJsoo:true ~libDir:root)
-             (fun deps  ->
-                let thirdPartyRoots =
-                  List.map deps
-                    ~f:(fun dep  -> rel ~dir:nodeModulesRoot (uncap dep)) in
-                List.map thirdPartyRoots
-                  ~f:(fun path  ->
-                        Rule.default ~dir:root [relD ~dir:path ".merlin"]))) in
-      Scheme.all
-        [dotMerlinScheme ~isTopLevelLib:true ~dir:root ~libName:topLibName;
-        Scheme.rules
-          [Rule.default ~dir
-             [relD ~dir:(rel ~dir:buildDirRoot topLibName)
-                (finalOutputName ^ ".out");
-             relD ~dir:(rel ~dir:buildDirRoot topLibName)
-               (finalOutputName ^ ".js");
-             relD ~dir:root ".merlin"]];
-        Scheme.exclude (fun path  -> path = packageJsonPath)
-          dotMerlinDefaultScheme]))
+     let dotMerlinDefaultScheme =
+       Scheme.rules_dep
+         (mapD (getThirdPartyDepsForLib ~ignoreJsoo:true ~libDir:root)
+            (fun deps  ->
+               let thirdPartyRoots =
+                 List.map deps
+                   ~f:(fun dep  -> rel ~dir:nodeModulesRoot (uncap dep)) in
+               List.map thirdPartyRoots
+                 ~f:(fun path  ->
+                       Rule.default ~dir:root [relD ~dir:path ".merlin"]))) in
+     Scheme.all
+       [dotMerlinScheme ~isTopLevelLib:true ~dir:root ~libName:topLibName;
+       Scheme.rules
+         [Rule.default ~dir
+            [relD ~dir:(rel ~dir:buildDirRoot topLibName)
+               (finalOutputName ^ ".out");
+            relD ~dir:(rel ~dir:buildDirRoot topLibName)
+              (finalOutputName ^ ".js");
+            relD ~dir:root ".merlin"]];
+       Scheme.exclude (fun path  -> path = packageJsonPath)
+         dotMerlinDefaultScheme])
   else
     if Path.is_descendant ~dir:buildDirRoot dir
     then

@@ -652,7 +652,6 @@ let scheme dir::dir => {
      generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
   if (dir == root) {
     let packageJsonPath = rel dir::root "package.json";
-    ignore packageJsonPath;
     let dotMerlinDefaultScheme = Scheme.rules_dep (
       mapD
         (getThirdPartyDepsForLib ignoreJsoo::true libDir::root)
