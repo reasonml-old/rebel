@@ -115,7 +115,13 @@ let getThirdPartyDepsForLib ignoreJsoo::ignoreJsoo libDir::libDir => {
       Dep.action_stdout (
         mapD
           (Dep.path packageJsonPath)
-          (fun () => bashf dir::root "./buildUtils/extractDeps %s" (ts packageJsonPath))
+          /* This compiled jengaroot.ml file actually resides in node_modules/jengaboot/. We symlink it to the
+             top just so that we could make jenga's `root` point to the top */
+          (
+            fun () =>
+              bashf
+                dir::root "./node_modules/jengaboot/buildUtils/extractDeps %s" (ts packageJsonPath)
+          )
       )
     )
     (
@@ -655,12 +661,12 @@ let scheme dir::dir => {
             let thirdPartyRoots =
               List.map deps f::(fun dep => rel dir::nodeModulesRoot (uncap dep));
             List.map
-              thirdPartyRoots f::(fun path => Rule.default dir::dir [relD dir::path ".merlin"])
+              thirdPartyRoots f::(fun path => Rule.default dir::root [relD dir::path ".merlin"])
           }
         )
     );
     Scheme.all [
-      dotMerlinScheme isTopLevelLib::true dir::dir libName::topLibName,
+      dotMerlinScheme isTopLevelLib::true dir::root libName::topLibName,
       Scheme.rules [
         Rule.default
           dir::dir

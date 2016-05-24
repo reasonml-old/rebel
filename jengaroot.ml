@@ -60,7 +60,8 @@ let getThirdPartyDepsForLib ~ignoreJsoo  ~libDir  =
     (Dep.action_stdout
        (mapD (Dep.path packageJsonPath)
           (fun ()  ->
-             bashf ~dir:root "./buildUtils/extractDeps %s"
+             bashf ~dir:root
+               "./node_modules/jengaboot/buildUtils/extractDeps %s"
                (ts packageJsonPath))))
     (fun content  ->
        let deps =
@@ -378,9 +379,9 @@ let scheme ~dir  =
                     ~f:(fun dep  -> rel ~dir:nodeModulesRoot (uncap dep)) in
                 List.map thirdPartyRoots
                   ~f:(fun path  ->
-                        Rule.default ~dir [relD ~dir:path ".merlin"]))) in
+                        Rule.default ~dir:root [relD ~dir:path ".merlin"]))) in
       Scheme.all
-        [dotMerlinScheme ~isTopLevelLib:true ~dir ~libName:topLibName;
+        [dotMerlinScheme ~isTopLevelLib:true ~dir:root ~libName:topLibName;
         Scheme.rules
           [Rule.default ~dir
              [relD ~dir:(rel ~dir:buildDirRoot topLibName)

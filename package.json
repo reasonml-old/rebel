@@ -1,6 +1,6 @@
 {
-  "name": "boot",
-  "version": "1.0.0",
+  "name": "jengaboot",
+  "version": "0.0.1",
   "description": "Prototype that conforms to the magic-build spec. Implemented with Jenga.",
   "main": "index.js",
   "dependencies": {
@@ -8,6 +8,9 @@
     "chenglou": "*",
     "universalcaketype": "*",
     "js_of_ocaml": "*"
+  },
+  "bin": {
+    "boot": "ln -s jengaroot.ml $(PWD)"
   },
   "devDependencies": {},
   "scripts": {
