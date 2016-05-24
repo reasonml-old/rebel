@@ -1,0 +1,26 @@
+{
+  "name": "boot",
+  "version": "1.0.0",
+  "description": "Prototype that conforms to the magic-build spec. Implemented with Jenga.",
+  "main": "index.js",
+  "dependencies": {
+    "bookshop": "*",
+    "chenglou": "*",
+    "universalcaketype": "*",
+    "js_of_ocaml": "*"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenglou/jengaboot.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/chenglou/jengaboot/issues"
+  },
+  "homepage": "https://github.com/chenglou/jengaboot#readme"
+}
