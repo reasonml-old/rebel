@@ -110,64 +110,24 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
     )
 };
 
-/* Like above, but include third-party deps too. */
-let ocamlDepIncludingThirdParty sourcePath::sourcePath => {
-  let srcDir = Path.dirname sourcePath;
-  bindD
-    (ocamlDep sourcePath::sourcePath)
+/* Simply read into the package.json "dependencies" field. */
+let getThirdPartyDepsForLib ignoreJsoo::ignoreJsoo libDir::libDir => {
+  let packageJsonPath = rel dir::libDir "package.json";
+  mapD
     (
-      fun (original, deps) =>
+      Dep.action_stdout (
         mapD
-          (
-            Dep.both
-              (depsubdirs dir::nodeModulesRoot)
-              (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
-          )
-          (
-            fun (thirdPartyRoots, sourcePaths) => {
-              /* Dedupe, because we might have foo.re and foo.rei */
-              let sourceModules = List.map sourcePaths f::pathToModule |> List.dedup;
-              let thirdPartyModules = [
-                /* Special-case js_of_ocaml as a magical global. */
-                "Js",
-                ...List.map thirdPartyRoots f::(fun r => Path.basename r |> cap)
-              ];
-              /* See comment in `ocamlDepCurrentSources` for this first filter. */
-              List.filter deps f::(fun m => m != chopSuffixExn original) |>
-                List.filter
-                  f::(
-                    fun m =>
-                      List.exists sourceModules f::(fun m' => m == m') ||
-                        List.exists thirdPartyModules f::(fun m' => m == m')
-                  )
-            }
-          )
-    )
-};
-
-/* Basically (ocamlDepIncludingThirdParty - ocamlDepCurrentSources - {Js}) for all source files in the library
-   in question */
-let getThirdPartyDepsForLibNoJsoo srcDir::srcDir => {
-  let getThirdPartyDepsForLibNoJsoo' sourcePaths =>
-    mapD
-      (
-        Dep.all (
-          List.map
-            sourcePaths f::(fun sourcePath => ocamlDepIncludingThirdParty sourcePath::sourcePath)
-        )
+          (Dep.path packageJsonPath)
+          (fun () => bashf dir::root "./buildUtils/extractDeps %s" (ts packageJsonPath))
       )
-      (
-        fun sourcePathsDeps => {
-          /* Dedupe, because we might have foo.re and foo.rei */
-          let internalDeps = List.map sourcePaths f::pathToModule |> List.dedup;
-          List.concat sourcePathsDeps |>
-            /* Filter out Js, from js_of_ocaml. See callsite of `getThirdPartyDepsForLibNoJsoo`. */
-            List.filter f::(fun dep => dep != "Js") |>
-            List.dedup |>
-            List.filter f::(fun dep => List.for_all internalDeps f::(fun dep' => dep != dep'))
-        }
-      );
-  bindD (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}")) getThirdPartyDepsForLibNoJsoo'
+    )
+    (
+      fun content => {
+        let deps = String.split content on::'\n' |> List.filter f::nonBlank;
+        let deps = ignoreJsoo ? List.filter deps f::(fun d => d != "js_of_ocaml") : deps;
+        List.map deps f::cap
+      }
+    )
 };
 
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
@@ -200,21 +160,20 @@ let topologicalSort graph => {
    depended is compiled before the dependent). */
 let sortTransitiveThirdParties =
   bindD
-    (depsubdirs dir::nodeModulesRoot)
+    (getThirdPartyDepsForLib ignoreJsoo::true libDir::root)
     (
-      fun thirdPartyRoots => {
-        let thirdPartySrcDirs = List.map thirdPartyRoots f::(fun r => rel dir::r "src");
+      fun thirdPartyDeps => {
+        let thirdPartyLibDirs =
+          List.map thirdPartyDeps f::(fun dep => rel dir::nodeModulesRoot (uncap dep));
         let thirdPartiesThirdPartyDepsD = Dep.all (
           List.map
-            thirdPartySrcDirs f::(fun srcDir => getThirdPartyDepsForLibNoJsoo srcDir::srcDir)
+            thirdPartyLibDirs
+            f::(fun libDir => getThirdPartyDepsForLib ignoreJsoo::true libDir::libDir)
         );
         mapD
           thirdPartiesThirdPartyDepsD
           (
-            fun thirdPartiesThirdPartyDeps =>
-              List.zip_exn
-                (List.map thirdPartyRoots f::(fun a => Path.basename a |> cap))
-                thirdPartiesThirdPartyDeps |> topologicalSort
+            fun thirdPartiesThirdPartyDeps => List.zip_exn thirdPartyDeps thirdPartiesThirdPartyDeps |> topologicalSort
           )
       }
     );
@@ -312,17 +271,24 @@ let jsooLocationD =
 /* We compile each file in the current library (say, foo). If a file's Bar.re, it'll be compiled to
    foo__Bar.{cmi, cmo, cmt}. As to why we're namespacing compiled outputs like this, see
    `moduleAliasFileScheme`. */
-let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::sourcePaths => {
+let compileSourcesScheme
+    libDir::libDir
+    buildDir::buildDir
+    libName::libName
+    sourcePaths::sourcePaths => {
   let compileSourcesScheme' jsooLocation => {
     /* This is the module alias file generated through `moduleAliasFileScheme`, that we said we're gonna `-open`
        during `ocamlc` */
     let moduleAliasDep extension => relD dir::buildDir (libName ^ "." ^ extension);
-    let firstPartyModules = List.map sourcePaths f::pathToModule;
     let compileEachSourcePath path =>
       mapD
-        (ocamlDepIncludingThirdParty sourcePath::path)
         (
-          fun depModules => {
+          Dep.both
+            (getThirdPartyDepsForLib ignoreJsoo::false libDir::libDir)
+            (ocamlDepCurrentSources sourcePath::path)
+        )
+        (
+          fun (thirdPartyModules, firstPartyDeps) => {
             let isInterface' = isInterface path;
             let hasInterface =
               not isInterface' &&
@@ -332,17 +298,15 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
                     fun path' =>
                       isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path
                   );
-            let thirdPartyModules =
-              List.filter
-                depModules f::(fun m => List.for_all firstPartyModules f::(fun m' => m' != m));
             /* Only include js_of_ocaml in the modules search path if the current source mentions that Js
                module. Might speed up some things? This is used in the `action` below. */
             let jsooIncludeString =
-              List.exists thirdPartyModules f::(fun m => m == "Js") ?
+              /* Note the upper case on "Js". This comes from getThirdPartyDepsForLib */
+              List.exists thirdPartyModules f::(fun m => m == "Js_of_ocaml") ?
                 Printf.sprintf "-I %s %s/js_of_ocaml.cma" jsooLocation jsooLocation : "";
             /* Remove this now. We use it to form dependencies below. Js is a special one and doesn't depend
                on any file in the directories. */
-            let thirdPartyModules = List.filter thirdPartyModules f::(fun m => m != "Js");
+            let thirdPartyModules = List.filter thirdPartyModules f::(fun m => m != "Js_of_ocaml");
             /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
                to recompile the dependent modules. Win. */
             let firstPartyCmisDeps =
@@ -351,7 +315,7 @@ let compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::source
                 f::(
                   fun path => {
                     let pathAsModule = pathToModule path;
-                    List.exists depModules f::(fun m => m == pathAsModule)
+                    List.exists firstPartyDeps f::(fun m => m == pathAsModule)
                   }
                 ) |>
                 List.map
@@ -614,7 +578,11 @@ let compileLibScheme
                 buildDir::buildDir
                 libName::libName
                 sourceNotInterfacePaths::sourceNotInterfacePaths,
-              compileSourcesScheme buildDir::buildDir libName::libName sourcePaths::unsortedPaths,
+              compileSourcesScheme
+                libDir::(Path.dirname srcDir)
+                buildDir::buildDir
+                libName::libName
+                sourcePaths::unsortedPaths,
               isTopLevelLib ?
                 /* if we're at the final, top level compilation, there's no need to build a cma output (and
                    then generate an executable from it). We can cut straight to generating the executable. See
@@ -680,15 +648,24 @@ let scheme dir::dir => {
      jump-to-location could work correctly when we jump into a third-party source file. As to why exactly we
      generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
   if (dir == root) {
+    let packageJsonPath = rel dir::root "package.json";
+    ignore packageJsonPath;
     let dotMerlinDefaultScheme = Scheme.rules_dep (
       mapD
-        (depsubdirs dir::nodeModulesRoot)
+        (
+          /* Dep.both */
+          /* (getThirdPartyDepsForLib ignoreJsoo::true libDir::root) */
+          /* (Dep.path packageJsonPath) */
+          depsubdirs
+            dir::nodeModulesRoot
+        )
         (
           fun thirdPartyRoots =>
             List.map
               thirdPartyRoots f::(fun path => Rule.default dir::dir [relD dir::path ".merlin"])
         )
     );
+    ignore dotMerlinDefaultScheme;
     Scheme.all [
       dotMerlinScheme isTopLevelLib::true dir::dir libName::topLibName,
       Scheme.rules [

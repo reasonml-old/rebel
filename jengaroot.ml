@@ -56,44 +56,22 @@ let ocamlDepCurrentSources ~sourcePath  =
               (List.filter
                  ~f:(fun m  ->
                        List.exists sourceModules ~f:(fun m'  -> m = m')))))
-let ocamlDepIncludingThirdParty ~sourcePath  =
-  let srcDir = Path.dirname sourcePath in
-  bindD (ocamlDep ~sourcePath)
-    (fun (original,deps)  ->
-       mapD
-         (Dep.both (depsubdirs ~dir:nodeModulesRoot)
-            (Dep.glob_listing (Glob.create ~dir:srcDir "*.{re,rei}")))
-         (fun (thirdPartyRoots,sourcePaths)  ->
-            let sourceModules =
-              (List.map sourcePaths ~f:pathToModule) |> List.dedup in
-            let thirdPartyModules = "Js" ::
-              (List.map thirdPartyRoots
-                 ~f:(fun r  -> (Path.basename r) |> cap)) in
-            (List.filter deps ~f:(fun m  -> m <> (chopSuffixExn original)))
-              |>
-              (List.filter
-                 ~f:(fun m  ->
-                       (List.exists sourceModules ~f:(fun m'  -> m = m')) ||
-                         (List.exists thirdPartyModules
-                            ~f:(fun m'  -> m = m'))))))
-let getThirdPartyDepsForLibNoJsoo ~srcDir  =
-  let getThirdPartyDepsForLibNoJsoo' sourcePaths =
-    mapD
-      (Dep.all
-         (List.map sourcePaths
-            ~f:(fun sourcePath  -> ocamlDepIncludingThirdParty ~sourcePath)))
-      (fun sourcePathsDeps  ->
-         let internalDeps =
-           (List.map sourcePaths ~f:pathToModule) |> List.dedup in
-         (((List.concat sourcePathsDeps) |>
-             (List.filter ~f:(fun dep  -> dep <> "Js")))
-            |> List.dedup)
-           |>
-           (List.filter
-              ~f:(fun dep  ->
-                    List.for_all internalDeps ~f:(fun dep'  -> dep <> dep')))) in
-  bindD (Dep.glob_listing (Glob.create ~dir:srcDir "*.{re,rei}"))
-    getThirdPartyDepsForLibNoJsoo'
+let getThirdPartyDepsForLib ~ignoreJsoo  ~libDir  =
+  let packageJsonPath = rel ~dir:libDir "package.json" in
+  mapD
+    (Dep.action_stdout
+       (mapD (Dep.path packageJsonPath)
+          (fun ()  ->
+             bashf ~dir:root "./buildUtils/extractDeps %s"
+               (ts packageJsonPath))))
+    (fun content  ->
+       let deps =
+         (String.split content ~on:'\n') |> (List.filter ~f:nonBlank) in
+       let deps =
+         match ignoreJsoo with
+         | true  -> List.filter deps ~f:(fun d  -> d <> "js_of_ocaml")
+         | false  -> deps in
+       List.map deps ~f:cap)
 let topologicalSort graph =
   let graph = { contents = graph } in
   let rec topologicalSort' currNode accum =
@@ -111,21 +89,20 @@ let topologicalSort graph =
     topologicalSort' (fst (List.hd_exn graph.contents)) accum done;
   List.rev accum.contents
 let sortTransitiveThirdParties =
-  bindD (depsubdirs ~dir:nodeModulesRoot)
-    (fun thirdPartyRoots  ->
-       let thirdPartySrcDirs =
-         List.map thirdPartyRoots ~f:(fun r  -> rel ~dir:r "src") in
+  bindD (getThirdPartyDepsForLib ~ignoreJsoo:true ~libDir:root)
+    (fun thirdPartyDeps  ->
+       let thirdPartyLibDirs =
+         List.map thirdPartyDeps
+           ~f:(fun dep  -> rel ~dir:nodeModulesRoot (uncap dep)) in
        let thirdPartiesThirdPartyDepsD =
          Dep.all
-           (List.map thirdPartySrcDirs
-              ~f:(fun srcDir  -> getThirdPartyDepsForLibNoJsoo ~srcDir)) in
+           (List.map thirdPartyLibDirs
+              ~f:(fun libDir  ->
+                    getThirdPartyDepsForLib ~ignoreJsoo:true ~libDir)) in
        mapD thirdPartiesThirdPartyDepsD
          (fun thirdPartiesThirdPartyDeps  ->
-            (List.zip_exn
-               (List.map thirdPartyRoots
-                  ~f:(fun a  -> (Path.basename a) |> cap))
-               thirdPartiesThirdPartyDeps)
-              |> topologicalSort))
+            (List.zip_exn thirdPartyDeps thirdPartiesThirdPartyDeps) |>
+              topologicalSort))
 let sortPathsTopologically ~dir  ~paths  =
   let pathsAsModulesOriginalCapitalization =
     List.map paths ~f:(fun path  -> fileNameNoExtNoDir path) in
@@ -175,14 +152,15 @@ let jsooLocationD =
     (Dep.action_stdout
        (Dep.return (bash ~dir:root "ocamlfind query js_of_ocaml")))
     String.strip
-let compileSourcesScheme ~buildDir  ~libName  ~sourcePaths  =
+let compileSourcesScheme ~libDir  ~buildDir  ~libName  ~sourcePaths  =
   let compileSourcesScheme' jsooLocation =
     let moduleAliasDep extension =
       relD ~dir:buildDir (libName ^ ("." ^ extension)) in
-    let firstPartyModules = List.map sourcePaths ~f:pathToModule in
     let compileEachSourcePath path =
-      mapD (ocamlDepIncludingThirdParty ~sourcePath:path)
-        (fun depModules  ->
+      mapD
+        (Dep.both (getThirdPartyDepsForLib ~ignoreJsoo:false ~libDir)
+           (ocamlDepCurrentSources ~sourcePath:path))
+        (fun (thirdPartyModules,firstPartyDeps)  ->
            let isInterface' = isInterface path in
            let hasInterface =
              (not isInterface') &&
@@ -191,23 +169,22 @@ let compileSourcesScheme ~buildDir  ~libName  ~sourcePaths  =
                         (isInterface path') &&
                           ((fileNameNoExtNoDir path') =
                              (fileNameNoExtNoDir path)))) in
-           let thirdPartyModules =
-             List.filter depModules
-               ~f:(fun m  ->
-                     List.for_all firstPartyModules ~f:(fun m'  -> m' <> m)) in
            let jsooIncludeString =
-             match List.exists thirdPartyModules ~f:(fun m  -> m = "Js") with
+             match List.exists thirdPartyModules
+                     ~f:(fun m  -> m = "Js_of_ocaml")
+             with
              | true  ->
                  Printf.sprintf "-I %s %s/js_of_ocaml.cma" jsooLocation
                    jsooLocation
              | false  -> "" in
            let thirdPartyModules =
-             List.filter thirdPartyModules ~f:(fun m  -> m <> "Js") in
+             List.filter thirdPartyModules ~f:(fun m  -> m <> "Js_of_ocaml") in
            let firstPartyCmisDeps =
              (List.filter sourcePaths
                 ~f:(fun path  ->
                       let pathAsModule = pathToModule path in
-                      List.exists depModules ~f:(fun m  -> m = pathAsModule)))
+                      List.exists firstPartyDeps
+                        ~f:(fun m  -> m = pathAsModule)))
                |>
                (List.map
                   ~f:(fun path  ->
@@ -341,8 +318,8 @@ let compileLibScheme ?(isTopLevelLib= true)  ~srcDir  ~libName  ~buildDir  =
                Scheme.all
                  [moduleAliasFileScheme ~buildDir ~libName
                     ~sourceNotInterfacePaths;
-                 compileSourcesScheme ~buildDir ~libName
-                   ~sourcePaths:unsortedPaths;
+                 compileSourcesScheme ~libDir:(Path.dirname srcDir) ~buildDir
+                   ~libName ~sourcePaths:unsortedPaths;
                  (match isTopLevelLib with
                   | true  ->
                       finalOutputsScheme ~sortedSourcePaths:sortedPaths
@@ -392,23 +369,26 @@ let scheme ~dir  =
   ignore dir;
   if dir = root
   then
-    (let dotMerlinDefaultScheme =
-       Scheme.rules_dep
-         (mapD (depsubdirs ~dir:nodeModulesRoot)
-            (fun thirdPartyRoots  ->
-               List.map thirdPartyRoots
-                 ~f:(fun path  ->
-                       Rule.default ~dir [relD ~dir:path ".merlin"]))) in
-     Scheme.all
-       [dotMerlinScheme ~isTopLevelLib:true ~dir ~libName:topLibName;
-       Scheme.rules
-         [Rule.default ~dir
-            [relD ~dir:(rel ~dir:buildDirRoot topLibName)
-               (finalOutputName ^ ".out");
-            relD ~dir:(rel ~dir:buildDirRoot topLibName)
-              (finalOutputName ^ ".js");
-            relD ~dir:root ".merlin"]];
-       dotMerlinDefaultScheme])
+    (let packageJsonPath = rel ~dir:root "package.json" in
+     ignore packageJsonPath;
+     (let dotMerlinDefaultScheme =
+        Scheme.rules_dep
+          (mapD (depsubdirs ~dir:nodeModulesRoot)
+             (fun thirdPartyRoots  ->
+                List.map thirdPartyRoots
+                  ~f:(fun path  ->
+                        Rule.default ~dir [relD ~dir:path ".merlin"]))) in
+      ignore dotMerlinDefaultScheme;
+      Scheme.all
+        [dotMerlinScheme ~isTopLevelLib:true ~dir ~libName:topLibName;
+        Scheme.rules
+          [Rule.default ~dir
+             [relD ~dir:(rel ~dir:buildDirRoot topLibName)
+                (finalOutputName ^ ".out");
+             relD ~dir:(rel ~dir:buildDirRoot topLibName)
+               (finalOutputName ^ ".js");
+             relD ~dir:root ".merlin"]];
+        dotMerlinDefaultScheme]))
   else
     if Path.is_descendant ~dir:buildDirRoot dir
     then
