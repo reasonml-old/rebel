@@ -36,6 +36,7 @@ Most of these are for the ease of the prototype, but they might or might not be 
 - Needs a `src/`, and it must be a flat directory.
 - Third-party deps go into `node_modules/`.
 - Third-party deps names are uncapitalized (can contain upper-case in the whole word).
+- Every library (including the current top one) needs a package.json that lists its dependencies, if any.
 
 **To run**: `jenga`. Then see the output from `_build/top/app.out`, and/or open up `index.html` to see the compiled-to-js version.
 
