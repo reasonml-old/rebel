@@ -58,9 +58,6 @@ let buildDirRoot = rel dir::root "_build";
 
 let topSrcDir = rel dir::root "src";
 
-/* Dep.subdirs only looks for directories, not symlinks. */
-let depsubdirs dir::dir => Dep.glob_listing (Glob.create dir::dir kinds::[`Directory, `Link] "*");
-
 /* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate */
 let ocamlDep sourcePath::sourcePath => {
@@ -652,20 +649,16 @@ let scheme dir::dir => {
     ignore packageJsonPath;
     let dotMerlinDefaultScheme = Scheme.rules_dep (
       mapD
+        (getThirdPartyDepsForLib ignoreJsoo::true libDir::root)
         (
-          /* Dep.both */
-          /* (getThirdPartyDepsForLib ignoreJsoo::true libDir::root) */
-          /* (Dep.path packageJsonPath) */
-          depsubdirs
-            dir::nodeModulesRoot
-        )
-        (
-          fun thirdPartyRoots =>
+          fun deps => {
+            let thirdPartyRoots =
+              List.map deps f::(fun dep => rel dir::nodeModulesRoot (uncap dep));
             List.map
               thirdPartyRoots f::(fun path => Rule.default dir::dir [relD dir::path ".merlin"])
+          }
         )
     );
-    ignore dotMerlinDefaultScheme;
     Scheme.all [
       dotMerlinScheme isTopLevelLib::true dir::dir libName::topLibName,
       Scheme.rules [
@@ -677,7 +670,7 @@ let scheme dir::dir => {
             relD dir::root ".merlin"
           ]
       ],
-      dotMerlinDefaultScheme
+      Scheme.exclude (fun path => path == packageJsonPath) dotMerlinDefaultScheme
     ]
   } else if (
     Path.is_descendant dir::buildDirRoot dir

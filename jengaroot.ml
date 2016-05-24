@@ -23,8 +23,6 @@ let libraryFileName = "lib.cma"
 let nodeModulesRoot = rel ~dir:root "node_modules"
 let buildDirRoot = rel ~dir:root "_build"
 let topSrcDir = rel ~dir:root "src"
-let depsubdirs ~dir  =
-  Dep.glob_listing (Glob.create ~dir ~kinds:[`Directory; `Link] "*")
 let ocamlDep ~sourcePath  =
   let srcDir = Path.dirname sourcePath in
   let flag =
@@ -373,12 +371,14 @@ let scheme ~dir  =
      ignore packageJsonPath;
      (let dotMerlinDefaultScheme =
         Scheme.rules_dep
-          (mapD (depsubdirs ~dir:nodeModulesRoot)
-             (fun thirdPartyRoots  ->
+          (mapD (getThirdPartyDepsForLib ~ignoreJsoo:true ~libDir:root)
+             (fun deps  ->
+                let thirdPartyRoots =
+                  List.map deps
+                    ~f:(fun dep  -> rel ~dir:nodeModulesRoot (uncap dep)) in
                 List.map thirdPartyRoots
                   ~f:(fun path  ->
                         Rule.default ~dir [relD ~dir:path ".merlin"]))) in
-      ignore dotMerlinDefaultScheme;
       Scheme.all
         [dotMerlinScheme ~isTopLevelLib:true ~dir ~libName:topLibName;
         Scheme.rules
@@ -388,7 +388,8 @@ let scheme ~dir  =
              relD ~dir:(rel ~dir:buildDirRoot topLibName)
                (finalOutputName ^ ".js");
              relD ~dir:root ".merlin"]];
-        dotMerlinDefaultScheme]))
+        Scheme.exclude (fun path  -> path = packageJsonPath)
+          dotMerlinDefaultScheme]))
   else
     if Path.is_descendant ~dir:buildDirRoot dir
     then
