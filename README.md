@@ -40,6 +40,10 @@ Most of these are for the ease of the prototype, but they might or might not be 
 
 ## For Consumers
 
+You need to have Jenga and js_of_ocaml installed via OPAM:
+- `opam update`
+- `opam install jenga`
+- `opam install js_of_ocaml`
 - `npm install --save-dev jengaboot`
 - Write some files in your `src/`, or install some compliant (see above) npm packages.
 - `./node_modules/.bin/boot`
