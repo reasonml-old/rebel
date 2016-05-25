@@ -120,7 +120,7 @@ let getThirdPartyDepsForLib ignoreJsoo::ignoreJsoo libDir::libDir => {
           (
             fun () =>
               bashf
-                dir::root "./node_modules/jengaboot/buildUtils/extractDeps %s" (ts packageJsonPath)
+                dir::root "./buildUtils/extractDeps.out %s" (ts packageJsonPath)
           )
       )
     )

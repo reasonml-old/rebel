@@ -60,8 +60,7 @@ let getThirdPartyDepsForLib ~ignoreJsoo  ~libDir  =
     (Dep.action_stdout
        (mapD (Dep.path packageJsonPath)
           (fun ()  ->
-             bashf ~dir:root
-               "./node_modules/jengaboot/buildUtils/extractDeps %s"
+             bashf ~dir:root "./buildUtils/extractDeps.out %s"
                (ts packageJsonPath))))
     (fun content  ->
        let deps =
