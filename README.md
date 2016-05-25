@@ -89,3 +89,6 @@ alias f="refmt -parse re -print ml jengarootReal.re \
 - Compiling A and B that both require C.
 - .rei interface files referencing third-party modules that source files don't (extra dependencies).
 - `open`ing a third-party library to refer to its module that happens to have the same name as one of our first-party modules.
+
+## Credits
+The whole Jane Street team for making Jenga and helping me understanding it.
