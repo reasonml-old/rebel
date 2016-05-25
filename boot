@@ -1,4 +1,3 @@
-ln -f -s node_modules/jengaboot/jengaroot.ml &&
-jenga &&
+jenga -path-to-jenga-conf ./node_modules/jengaboot/jenga.conf &&
 echo "*** Program output:" &&
 ./_build/top/app.out

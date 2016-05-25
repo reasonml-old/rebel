@@ -120,6 +120,8 @@ let getThirdPartyDepsForLib ignoreJsoo::ignoreJsoo libDir::libDir => {
           (
             fun () =>
               bashf
+                /* Swap the comment for npm publish. */
+                /* dir::root "./node_modules/jengaboot/buildUtils/extractDeps.out %s" (ts packageJsonPath) */
                 dir::root "./buildUtils/extractDeps.out %s" (ts packageJsonPath)
           )
       )

@@ -61,26 +61,8 @@ esc=$(printf '\033')
 alias f="refmt -parse re -print ml jengarootReal.re \
   | sed 's/\[@explicit_arity \]//g' \
   > jengaroot.ml \
-  && (time jenga -show-actions-run-verbose -verbose -show-checked \
-  -show-error-dependency-paths -brief-error-summary -show-buildable-discovery \
-  -show-reflecting -show-considering -trace) | \
-  2>&1 \
-  sed 's/exit_code = 0/${esc}[32m&${esc}[39m/' \
-  | sed 's/exit_code = 1/${esc}[31m&${esc}[0m/' \
-  | sed 's/\*\*\* /${esc}[30m> ${esc}[0m/' \
-  | sed 's/jenga: ERROR:/${esc}[31m&${esc}[0m/' \
-  | sed 's/- build/${esc}[30m> ${esc}[0m${esc}[40m${esc}[33mbuild${esc}[0m/' \
-  | sed 's/+ bash/${esc}[30m> ${esc}[0m${esc}[40m${esc}[33mbash${esc}[0m/' \
-  | sed 's/- exit.*/${esc}[30m> ${esc}[30m&${esc}[0m/' \
-  | sed 's/jenga: NOT RUNNING:/${esc}[40m${esc}[34m&${esc}[0m/' \
-  | sed 's/jenga: Considering:.*/${esc}[30m&${esc}[0m/' \
-  | sed 's/jenga: Building:/${esc}[0m${esc}[40m${esc}[33m&${esc}[0m/' \
-  | sed 's/jenga: //' \
-  | sed 's/bash -c.*/${esc}[3m&${esc}[0m/' \
-  | huh"
+  && time jenga"
 ```
-
-(The last `huh` is exposed from [BetterErrors](https://github.com/chenglou/BetterErrors). If you don't have it, just remove that part.)
 
 **Things to test**
 - Support for source/interface interface files that are (uncapitalized, Capitalized) and (snake_cased, camelCased). Support third-party library names of the latter pair (npm modules can no longer be capitalized).
