@@ -2,7 +2,6 @@
  * vim: set ft=rust:
  * vim: set ft=reason:
  */
-
 open Core.Std;
 
 open Async.Std;
@@ -43,7 +42,13 @@ let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
 
 let pathToModule path => fileNameNoExtNoDir path |> cap;
 
-let isInterface path => String.is_suffix (Path.basename path) suffix::".rei";
+let isInterface path =>
+  String.is_suffix (Path.basename path) suffix::".rei" ||
+    String.is_suffix (Path.basename path) suffix::".mli";
+
+let isReasonSrc path =>
+  String.is_suffix (Path.basename path) suffix::".re" ||
+    String.is_suffix (Path.basename path) suffix::".rei";
 
 /* this jengaroot-specific helpers */
 let topLibName = "top";
@@ -70,7 +75,11 @@ let ocamlDep sourcePath::sourcePath => {
         fun () =>
           bashf
             dir::srcDir
-            "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s"
+            (
+              isReasonSrc sourcePath ?
+                "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s" :
+                "ocamldep -ml-synonym .ml -mli-synonym .mli -modules -one-line %s %s"
+            )
             flag
             (Path.basename sourcePath)
       )
@@ -91,7 +100,7 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
     (
       fun (original, deps) =>
         mapD
-          (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
+          (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}"))
           (
             fun sourcePaths => {
               /* Dedupe, because we might have foo.re and foo.rei */
@@ -121,8 +130,12 @@ let getThirdPartyDepsForLib ignoreJsoo::ignoreJsoo libDir::libDir => {
             fun () =>
               bashf
                 /* Swap the comment for npm publish. */
-                /* dir::root "./node_modules/jengaboot/buildUtils/extractDeps.out %s" (ts packageJsonPath) */
-                dir::root "./buildUtils/extractDeps.out %s" (ts packageJsonPath)
+                dir::root
+                  "./node_modules/jengaboot/buildUtils/extractDeps.out %s"
+                  (ts packageJsonPath)
+                /*dir::root
+                "./buildUtils/extractDeps.out %s"
+                (ts packageJsonPath) */
           )
       )
     )
@@ -185,8 +198,8 @@ let sortTransitiveThirdParties =
 
 let sortPathsTopologically dir::dir paths::paths => {
   let pathsAsModulesOriginalCapitalization =
-    List.map paths f::(fun path => fileNameNoExtNoDir path);
-  let pathsAsModules = List.map pathsAsModulesOriginalCapitalization f::cap;
+    List.map paths f::(fun path => (fileNameNoExtNoDir path, path));
+  let pathsAsModules = List.map pathsAsModulesOriginalCapitalization f::(fun (file, _) => cap file);
   let depsForPathsD = Dep.all (
     List.map paths f::(fun path => ocamlDepCurrentSources sourcePath::path)
   );
@@ -200,9 +213,30 @@ let sortPathsTopologically dir::dir paths::paths => {
             f::(
               fun m => {
                 let fileNameOriginalCapitalization =
-                  List.exists pathsAsModulesOriginalCapitalization f::(fun m' => m == m') ?
-                    m : uncap m;
-                rel dir::dir (fileNameOriginalCapitalization ^ ".re")
+                  switch (
+                    List.map
+                      (
+                        List.filter
+                          pathsAsModulesOriginalCapitalization
+                          f::(
+                            fun (_, p) => {
+                              let m' = Path.basename p;
+                              m ^ ".re" == m' ||
+                                uncap m ^ ".re" == m' || m ^ ".ml" == m' || uncap m ^ ".ml" == m'
+                            }
+                          )
+                      )
+                      f::(
+                        fun (m', path) => {
+                          let m = m == m' ? m : uncap m;
+                          isReasonSrc path ? m ^ ".re" : m ^ ".ml"
+                        }
+                      )
+                  ) {
+                  | [x] => x
+                  | _ => assert false
+                  };
+                rel dir::dir fileNameOriginalCapitalization
               }
             )
     )
@@ -223,14 +257,14 @@ let moduleAliasFileScheme
     sourceNotInterfacePaths::sourceNotInterfacePaths
     libName::libName => {
   let name extension => rel dir::buildDir (libName ^ "." ^ extension);
-  let sourcePath = name "re";
+  let sourcePath = name "ml";
   let cmo = name "cmo";
   let cmi = name "cmi";
   let cmt = name "cmt";
   let fileContent =
     List.map sourceNotInterfacePaths f::fileNameNoExtNoDir |>
       List.map
-        f::(fun file => Printf.sprintf "let module %s = %s__%s;\n" (cap file) (cap libName) file) |>
+        f::(fun file => Printf.sprintf "module %s = %s__%s;;\n" (cap file) (cap libName) file) |>
       String.concat sep::"";
   let action =
     bashf
@@ -259,7 +293,7 @@ let moduleAliasFileScheme
 
          -o: output name
          */
-      "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
+      "ocamlc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
       (Path.basename sourcePath)
       (Path.basename cmo);
   /* TODO: do we even need the cmo file here? */
@@ -285,7 +319,8 @@ let compileSourcesScheme
     /* This is the module alias file generated through `moduleAliasFileScheme`, that we said we're gonna `-open`
        during `ocamlc` */
     let moduleAliasDep extension => relD dir::buildDir (libName ^ "." ^ extension);
-    let compileEachSourcePath path =>
+    let compileEachSourcePath path => {
+      let isReason = isReasonSrc path;
       mapD
         (
           Dep.both
@@ -359,7 +394,7 @@ let compileSourcesScheme
                             /* No need to glob `.rei`s here. We're only getting the file names to construct cmi
                                paths. */
                             dir::(rel dir::(rel dir::nodeModulesRoot libName) "src")
-                            "*.{re}"
+                            "*.{re,ml}"
                         )
                       )
                       (
@@ -385,7 +420,7 @@ let compileSourcesScheme
               moduleAliasDep "cmi",
               moduleAliasDep "cmo",
               moduleAliasDep "cmt",
-              moduleAliasDep "re",
+              isReason ? moduleAliasDep "re" : moduleAliasDep "ml",
               thirdPartiesCmisDep,
               ...firstPartyCmisDeps
             ];
@@ -407,13 +442,14 @@ let compileSourcesScheme
                    */
                 (
                   isInterface' ?
-                    "ocamlc -pp refmt -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf %s" :
+                    "ocamlc %s -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c %s -intf %s" :
                     /* Example command: ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open Foo -I \
                        path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma -I ./ -I ../fooDependsOnMe -I \
                        ../fooDependsOnMeToo -o foo__CurrentSourcePath -intf-suffix .rei -c -impl \
                        path/to/CurrentSourcePath.re */
-                    "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf-suffix .rei -impl %s"
+                    "ocamlc %s -bin-annot -g -w -30 -w -40 -w -3 -open %s %s -I %s %s -o %s -c %s -impl %s"
                 )
+                (isReason ? "-pp refmt" : "")
                 (cap libName)
                 jsooIncludeString
                 (ts buildDir)
@@ -428,10 +464,12 @@ let compileSourcesScheme
                     String.concat sep::" "
                 )
                 outNameNoExtNoDir
+                (isReason ? (isInterface' ? "" : "-intf-suffix .rei") : "")
                 (Path.reach_from dir::buildDir path);
             Rule.create targets::targets (mapD deps (fun () => action))
           }
-        );
+        )
+    };
     Scheme.rules_dep (Dep.all (List.map sourcePaths f::compileEachSourcePath))
   };
   Scheme.dep (mapD jsooLocationD compileSourcesScheme')
@@ -570,7 +608,7 @@ let compileLibScheme
     libName::libName
     buildDir::buildDir => Scheme.dep (
   bindD
-    (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
+    (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}"))
     (
       fun unsortedPaths => {
         let sourceNotInterfacePaths =
