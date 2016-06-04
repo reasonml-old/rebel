@@ -11,4 +11,4 @@ if (deps == []) {
   List.hd deps |> List.map fst |> String.concat "\n" |> print_endline
 };
 
-/* ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl extractDeps.re -o extractDeps 2>&1 | huh */
+/* ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl extractDeps.re -o extractDeps.out 2>&1 | huh */
