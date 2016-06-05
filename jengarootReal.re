@@ -399,7 +399,7 @@ let compileSourcesScheme
               };
             let action =
               bashf
-                dir::buildDir
+                dir::root
                 /* Most of the flags here have been explained previously in `moduleAliasFileScheme`.
                    -intf-suffix: tells ocamlc what the interface file's extension is.
 
@@ -422,13 +422,13 @@ let compileSourcesScheme
                     thirdPartyModules
                     f::(
                       fun m => "-I " ^ (
-                        uncap m |> rel dir::buildDirRoot |> Path.reach_from dir::buildDir
+                        uncap m |> rel dir::buildDirRoot |> Path.reach_from dir::root
                       )
                     ) |>
                     String.concat sep::" "
                 )
-                outNameNoExtNoDir
-                (Path.reach_from dir::buildDir path);
+                (ts (rel dir::buildDir outNameNoExtNoDir))
+                (Path.reach_from dir::root path);
             Rule.create targets::targets (mapD deps (fun () => action))
           }
         );
