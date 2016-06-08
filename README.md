@@ -47,7 +47,7 @@ You need to have Jenga, YoJson and js_of_ocaml installed via OPAM:
 - `opam install yojson`
 - `npm install --save-dev jengaboot`
 - Write some files in your `src/`, or install some compliant (see above) npm packages.
-- `./node_modules/.bin/boot`
+- `./node_modules/.bin/run`
 
 
 ## For Developers
