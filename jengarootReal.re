@@ -43,7 +43,10 @@ let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
 
 let pathToModule path => fileNameNoExtNoDir path |> cap;
 
-let isInterface path => String.is_suffix (Path.basename path) suffix::".rei";
+let isInterface path => {
+  let base = Path.basename path;
+  String.is_suffix base suffix::".rei" || String.is_suffix base suffix::".mli"
+};
 
 /* this jengaroot-specific helpers */
 let topLibName = "top";
@@ -59,7 +62,8 @@ let buildDirRoot = rel dir::root "_build";
 let topSrcDir = rel dir::root "src";
 
 /* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
-   ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate */
+   ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module
+   tracking in the presence of `open` */
 let ocamlDep sourcePath::sourcePath => {
   let srcDir = Path.dirname sourcePath;
   let flag = isInterface sourcePath ? "-intf" : "-impl";
@@ -70,6 +74,7 @@ let ocamlDep sourcePath::sourcePath => {
         fun () =>
           bashf
             dir::srcDir
+            /* seems like refmt intelligently detects source code type (re/ml) */
             "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s"
             flag
             (Path.basename sourcePath)
@@ -91,7 +96,7 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
     (
       fun (original, deps) =>
         mapD
-          (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
+          (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}"))
           (
             fun sourcePaths => {
               /* Dedupe, because we might have foo.re and foo.rei */
@@ -120,9 +125,13 @@ let getThirdPartyDepsForLib ignoreJsoo::ignoreJsoo libDir::libDir => {
           (
             fun () =>
               bashf
-                /* Swap the comment for npm publish. */
-                /* dir::root "./node_modules/jengaboot/buildUtils/extractDeps.out %s" (ts packageJsonPath) */
-                dir::root "./buildUtils/extractDeps.out %s" (ts packageJsonPath)
+                /* Swap the comment before `npm publish`. */
+                /* dir::root
+                   "./node_modules/jengaboot/buildUtils/extractDeps.out %s"
+                   (ts packageJsonPath) */
+                dir::root
+                "./buildUtils/extractDeps.out %s"
+                (ts packageJsonPath)
           )
       )
     )
@@ -183,10 +192,13 @@ let sortTransitiveThirdParties =
       }
     );
 
-let sortPathsTopologically dir::dir paths::paths => {
+/* Used to compile a library file. The compile command requires files to be passed in order. If A requires B
+   but B is passed after A in the command, the compilation will fail with e.g. "module B not found" when
+   compiling A */
+let sortPathsTopologically paths::paths => {
   let pathsAsModulesOriginalCapitalization =
-    List.map paths f::(fun path => fileNameNoExtNoDir path);
-  let pathsAsModules = List.map pathsAsModulesOriginalCapitalization f::cap;
+    List.map paths f::(fun path => (fileNameNoExtNoDir path |> cap, path));
+  let pathsAsModules = List.map pathsAsModulesOriginalCapitalization f::fst;
   let depsForPathsD = Dep.all (
     List.map paths f::(fun path => ocamlDepCurrentSources sourcePath::path)
   );
@@ -196,41 +208,35 @@ let sortPathsTopologically dir::dir paths::paths => {
       fun depsForPaths =>
         List.zip_exn pathsAsModules depsForPaths |>
           topologicalSort |>
-          List.map
-            f::(
-              fun m => {
-                let fileNameOriginalCapitalization =
-                  List.exists pathsAsModulesOriginalCapitalization f::(fun m' => m == m') ?
-                    m : uncap m;
-                rel dir::dir (fileNameOriginalCapitalization ^ ".re")
-              }
-            )
+          List.map f::(fun m => List.Assoc.find_exn pathsAsModulesOriginalCapitalization m)
     )
 };
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
-   into a foo.re file whose content is:
-   let module A = Foo__A;
-   let module B = Foo__B;
-   */
-/* We'll then compile this file into foo.cmi/cmo/cmt, and have it opened by default when compiling A.re and
+   into a foo.ml file whose content is:
+   module A = Foo__A;
+   module B = Foo__B;
+
+   We'll then compile this file into foo.cmi/cmo/cmt, and have it opened by default when compiling A.re and
    B.re (into foo_A and foo_B respectively) later. The effect is that, inside A.re, we can refer to B instead
-   of Foo__B thanks to the pre-opened foo.re. But when these files are used by other libraries (which aren't
+   of Foo__B thanks to the pre-opened foo.ml. But when these files are used by other libraries (which aren't
    compiled with foo.re pre-opened of course), they won't see module A or B, only Foo__A and Foo__B, aka in
-   practice, they simply won't see them. This effectively means we've implemented namespacing! */
+   practice, they simply won't see them. This effectively means we've implemented namespacing!
+
+   Note that we're generating a ml file rather than re, because this jengaroot theoretically works on pure
+   ocaml projects too, with no dep on reason. */
 let moduleAliasFileScheme
     buildDir::buildDir
     sourceNotInterfacePaths::sourceNotInterfacePaths
     libName::libName => {
   let name extension => rel dir::buildDir (libName ^ "." ^ extension);
-  let sourcePath = name "re";
+  let sourcePath = name "ml";
   let cmo = name "cmo";
   let cmi = name "cmi";
   let cmt = name "cmt";
   let fileContent =
     List.map sourceNotInterfacePaths f::fileNameNoExtNoDir |>
-      List.map
-        f::(fun file => Printf.sprintf "let module %s = %s__%s;\n" (cap file) (cap libName) file) |>
+      List.map f::(fun file => Printf.sprintf "module %s = %s__%s\n" (cap file) (cap libName) file) |>
       String.concat sep::"";
   let action =
     bashf
@@ -259,7 +265,7 @@ let moduleAliasFileScheme
 
          -o: output name
          */
-      "ocamlc -pp refmt -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
+      "ocamlc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
       (Path.basename sourcePath)
       (Path.basename cmo);
   /* TODO: do we even need the cmo file here? */
@@ -356,10 +362,10 @@ let compileSourcesScheme
                       (
                         Dep.glob_listing (
                           Glob.create
-                            /* No need to glob `.rei`s here. We're only getting the file names to construct cmi
-                               paths. */
+                            /* No need to glob `.rei/.mli`s here. We're only getting the file names to
+                               construct cmi paths. */
                             dir::(rel dir::(rel dir::nodeModulesRoot libName) "src")
-                            "*.{re}"
+                            "*.{re,ml}"
                         )
                       )
                       (
@@ -385,7 +391,7 @@ let compileSourcesScheme
               moduleAliasDep "cmi",
               moduleAliasDep "cmo",
               moduleAliasDep "cmt",
-              moduleAliasDep "re",
+              moduleAliasDep "ml",
               thirdPartiesCmisDep,
               ...firstPartyCmisDeps
             ];
@@ -570,13 +576,13 @@ let compileLibScheme
     libName::libName
     buildDir::buildDir => Scheme.dep (
   bindD
-    (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei}"))
+    (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}"))
     (
       fun unsortedPaths => {
         let sourceNotInterfacePaths =
           List.filter unsortedPaths f::(fun path => not (isInterface path));
         mapD
-          (sortPathsTopologically dir::srcDir paths::unsortedPaths)
+          (sortPathsTopologically paths::unsortedPaths)
           (
             fun sortedPaths => Scheme.all [
               moduleAliasFileScheme

@@ -1,3 +1,4 @@
+/* this is a reason source file */
 open C;
 open C.NestedInC;
 print_int (A.x + B.x + x + NestedInC.nestedX + NestedSoNestedInC.theNestest);
