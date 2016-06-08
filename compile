@@ -1,0 +1,1 @@
+jenga -path-to-jenga-conf ./node_modules/jengaboot/jenga.conf
