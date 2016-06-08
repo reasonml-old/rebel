@@ -1,9 +1,8 @@
 src/
 .merlin
 index.html
-jengaroot_test.ml
+jengaroot_test.re
 *.cmi
 *.cmo
 _build/
 .jenga
-
