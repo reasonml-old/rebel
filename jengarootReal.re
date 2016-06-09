@@ -411,14 +411,20 @@ let compileSourcesScheme
 
                    -c: compile only, don't link yet.
                    */
+                /* Example command: ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open Foo -I \
+                   path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma -I ./ -I ../fooDependsOnMe -I \
+                   ../fooDependsOnMeToo -o foo__CurrentSourcePath -intf-suffix .rei -c -impl \
+                   path/to/CurrentSourcePath.re */
                 (
-                  isInterface' ?
-                    "ocamlc -pp refmt -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf %s" :
-                    /* Example command: ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open Foo -I \
-                       path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma -I ./ -I ../fooDependsOnMe -I \
-                       ../fooDependsOnMeToo -o foo__CurrentSourcePath -intf-suffix .rei -c -impl \
-                       path/to/CurrentSourcePath.re */
+                  if isInterface' {
+                    "ocamlc -pp refmt -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf %s"
+                  } else if (
+                    String.is_suffix (Path.basename path) suffix::".re"
+                  ) {
                     "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf-suffix .rei -impl %s"
+                  } else {
+                    "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -impl %s"
+                  }
                 )
                 (cap libName)
                 jsooIncludeString
