@@ -7,3 +7,6 @@
 _build/
 *.out
 jengaroot.ml
+node_modules/ocamlRe
+node_modules/ocamlBetterErrors
+node_modules/js_of_ocaml

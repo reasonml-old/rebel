@@ -7,7 +7,8 @@
     "bookshop": "*",
     "chenglou": "*",
     "universalcaketype": "*",
-    "js_of_ocaml": "*"
+    "js_of_ocaml": "*",
+    "ocamlBetterErrors": "0.0.1"
   },
   "bin": {
     "run": "run",

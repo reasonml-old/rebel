@@ -240,7 +240,7 @@ let moduleAliasFileScheme
       String.concat sep::"";
   let action =
     bashf
-      dir::buildDir
+      dir::root
       /* We suppress a few warnings here through -w.
          - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
          can't be found at the moment this module alias file is compiled. This is normal, since the
@@ -265,9 +265,9 @@ let moduleAliasFileScheme
 
          -o: output name
          */
-      "ocamlc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s"
-      (Path.basename sourcePath)
-      (Path.basename cmo);
+      "ocamlc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+      (ts sourcePath)
+      (ts cmo);
   /* TODO: do we even need the cmo file here? */
   let compileRule =
     Rule.create targets::[cmo, cmi, cmt] (mapD (Dep.path sourcePath) (fun () => action));
@@ -417,13 +417,13 @@ let compileSourcesScheme
                    path/to/CurrentSourcePath.re */
                 (
                   if isInterface' {
-                    "ocamlc -pp refmt -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf %s"
+                    "ocamlc -pp refmt -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
                   } else if (
                     String.is_suffix (Path.basename path) suffix::".re"
                   ) {
-                    "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf-suffix .rei -impl %s"
+                    "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
                   } else {
-                    "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -impl %s"
+                    "ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open %s %s -I %s %s -o %s -c -impl %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
                   }
                 )
                 (cap libName)
@@ -468,7 +468,7 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
       /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
       sortedSourcePaths
       f::(fun path => rel dir::buildDir (libName ^ "__" ^ fileNameNoExtNoDir path ^ ".cmo"));
-  let cmosString = List.map cmos f::Path.basename |> String.concat sep::" ";
+  let cmosString = List.map cmos f::ts |> String.concat sep::" ";
   /* Final bundling. Time to get all the transitive dependencies... */
   Scheme.rules [
     Rule.simple
@@ -476,7 +476,7 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
       deps::(List.map [moduleAliasCmoPath, ...cmos] f::Dep.path)
       action::(
         bashf
-          dir::buildDir
+          dir::root
           /* Flags:
              -open: compile the file as if [file being opened] was opened at the top of the file. In
              our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
@@ -487,10 +487,10 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
              -o: output file name.
              */
           /* Example command: ocamlc -g -open Foo -a -o lib.cma foo.cmo aDependsOnMe.cmo a.cmo b.cmo */
-          "ocamlc -g -open %s -a -o %s %s %s"
+          "ocamlc -g -open %s -a -o %s %s %s 2>&1| huh; (exit ${PIPESTATUS[0]})"
           (cap libName)
-          (Path.basename cmaPath)
-          (Path.basename moduleAliasCmoPath)
+          (ts cmaPath)
+          (ts moduleAliasCmoPath)
           cmosString
       )
   ]
@@ -537,7 +537,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
 
                  -o: output file name.
                  */
-              "ocamlc -g -I %s %s/js_of_ocaml.cma -open %s -o %s %s %s %s"
+              "ocamlc -g -I %s %s/js_of_ocaml.cma -open %s -o %s %s %s %s 2>&1| huh; (exit ${PIPESTATUS[0]})"
               jsooLocation
               jsooLocation
               (cap topLibName)

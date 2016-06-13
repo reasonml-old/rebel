@@ -50,11 +50,15 @@ You need to have Jenga, YoJson and js_of_ocaml installed via OPAM:
 - `./node_modules/.bin/run`
 
 
-## For Developers
+## For Contributors
+Bother me on IRC/Twitter/issues/etc. for specific details.
 
-**To run**: `jenga`. Then see the output from `_build/top/app.out`, and/or open up `index.html` to see the compiled-to-js version.
+- `git clone` this repo
+- `npm install`
+- `jenga`
+- `_build/top/app.out` to see output, or open `index.html` to see output in console & on screen
 
-**To develop the jengaroot yourself**: have all the [Reason](https://github.com/facebook/reason) toolchain installed. Compile to jengaroot.ml. Here's a convenient compile & prettify command I've temporarily included in my bashrc/zshrc:
+**To develop the jengaroot yourself**: have all the [Reason](https://github.com/facebook/reason) toolchain installed. Compile jengarootReal.re to jengaroot.ml. Here's a convenient compile & prettify command I've temporarily included in my bashrc/zshrc:
 
 ```sh
 esc=$(printf '\033')
@@ -72,6 +76,7 @@ alias f="refmt -parse re -print ml jengarootReal.re \
 - Compiling A and B that both require C.
 - .rei interface files referencing third-party modules that source files don't (extra dependencies).
 - `open`ing a third-party library to refer to its module that happens to have the same name as one of our first-party modules.
+- compile libraries with mixed `re`, `rei`, `ml` and `mli` files.
 
 ## Credits
 The whole Jane Street team for making Jenga and helping me understanding it.
