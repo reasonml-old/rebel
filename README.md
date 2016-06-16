@@ -42,7 +42,7 @@ Most of these are for the ease of the prototype, but they might or might not be 
 
 You need to have Jenga, YoJson and js_of_ocaml installed via OPAM:
 - `opam update`
-- `opam install jenga`
+- `opam pin add -y jenga https://github.com/chenglou/jenga.git#2a0eb726f503038ad70d43f8e8bbb4c41223108a`
 - `opam install js_of_ocaml`
 - `opam install yojson`
 - `npm install --save-dev jengaboot`
@@ -53,6 +53,7 @@ You need to have Jenga, YoJson and js_of_ocaml installed via OPAM:
 ## For Contributors
 Bother me on IRC/Twitter/issues/etc. for specific details.
 
+- Do the previous sections' installs up until (including) yojson
 - `git clone` this repo
 - `npm install`
 - `jenga`
@@ -77,6 +78,7 @@ alias f="refmt -parse re -print ml jengarootReal.re \
 - .rei interface files referencing third-party modules that source files don't (extra dependencies).
 - `open`ing a third-party library to refer to its module that happens to have the same name as one of our first-party modules.
 - compile libraries with mixed `re`, `rei`, `ml` and `mli` files.
+- Symlinks.
 
 ## Credits
-The whole Jane Street team for making Jenga and helping me understanding it.
+The whole Jane Street team for making Jenga and helping me understanding it. Also to the whole Reason team of course.
