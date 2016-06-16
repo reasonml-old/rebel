@@ -1,42 +1,29 @@
 # Jengaboot
 
-Prototype that conforms to the magic-build spec. Implemented with Jenga.
+Prototype that conforms to the ideal [Reason](https://github.com/facebook/reason) build spec found [here](https://github.com/facebook/reason/wiki/Reason-Project:-Proposal-For-Unifying-Local-Development-And-Package-Manement) and [here](https://github.com/facebook/reason/wiki/The-Ideal-Package-Sandbox). Implemented with [Jenga](https://github.com/janestreet/jenga), Jane Street's all-purpose build system.
 
-Approximate directory structure:
+## Features
 
-```
-├── README.md
-├── jengaroot_real.re
-├── jengaroot.ml (compiled from jengaroot_real.re through Reason)
-├── node_modules (simulated third-party deps)
-│   ├── bookshop (this also depends on chenglou, a dep shared by top level library)
-│   │   ├── package.json (simulated library metadata)
-│   │   └── src
-│   │       ├── myBook.re
-│   │       ├── test.re
-│   │       └── test.rei
-│   └── chenglou
-│       ├── package.json
-│       └── src
-│           └── test.re
-└── src
-    ├── a.re
-    ├── b.re
-    ├── c.re
-    ├── main.re
-    └── test.re
-```
+- Lightning build speed: fast startup, incremental, parallel, etc.
+- `./node_modules/.bin/compile` to build everything (shorter command coming soon!). No need for sub-build commands since only changed things are rebuilt.
+- Works with npm-style `node_modules` third-party dependencies that follows the spec (see next section).
+- Works with Reason and vanilla OCaml syntax, out of the box.
+- Generates the correct .merlin files for [Merlin](https://github.com/the-lambda-church/merlin).
+- Generates JavaScript output through [js_of_ocaml](http://ocsigen.org/js_of_ocaml/).
+- Peace-of-mind "wipe the whole world" : just remove `_build/`.
 
-As of today, works on latest locally pinned jenga, ocaml v4.02.3, and whatever `opam update` dependencies versions for jenga.
+**Coming soon**:
+- Generates utop/rtop bootstrap file.
+- Generates documentation based on `mli`/`rei` interface files.
+- Works with OPAM dependencies.
+- Easier installation: bundle Jenga, etc.
 
-## Restrictions
-Most of these are for the ease of the prototype, but they might or might not be temporary.
+## "Ideal Reason Project" Spec
 
-- Only works with Reason source files for now.
 - Needs a `src/`, and it must be a flat directory.
-- Third-party deps go into `node_modules/`.
-- Third-party deps names are uncapitalized (can contain upper-case in the whole word).
-- Every library (including the current top one) needs a package.json that lists its dependencies, if any.
+- Third-party libraries go into `node_modules/`.
+- Third-party libraries names of the format `foo-bar` are transformed into FooBar when used as module name (source file names aren't allowed to have kebab-case).
+- Every library (including the current one) needs a package.json that lists its dependencies, if any.
 
 ## For Consumers
 
@@ -79,6 +66,7 @@ alias f="refmt -parse re -print ml jengarootReal.re \
 - `open`ing a third-party library to refer to its module that happens to have the same name as one of our first-party modules.
 - compile libraries with mixed `re`, `rei`, `ml` and `mli` files.
 - Symlinks.
+- third-party folders with kebab-case, snake_case, camelCase and CamelCase.
 
 ## Credits
 The whole Jane Street team for making Jenga and helping me understanding it. Also to the whole Reason team of course.
