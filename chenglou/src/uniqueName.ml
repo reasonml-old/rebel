@@ -1,1 +1,1 @@
-let unique = Universalcaketype.Cheese.make ()
+let unique = UniversalCakeType.Cheese.make ()

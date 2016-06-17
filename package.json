@@ -6,7 +6,7 @@
   "dependencies": {
     "bookshop": "*",
     "chenglou": "*",
-    "universalcaketype": "*",
+    "Universal-cake-type": "*",
     "js_of_ocaml": "*",
     "ocamlBetterErrors": "0.0.1"
   },

@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "dependencies": {
-    "universalcaketype": "*",
+    "Universal-cake-type": "*",
     "js_of_ocaml": "*"
   },
   "scripts": {
