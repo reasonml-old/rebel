@@ -512,7 +512,7 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
              -o: output file name.
              */
           /* Example command: ocamlc -g -open Foo -a -o lib.cma foo.cmo aDependsOnMe.cmo a.cmo b.cmo */
-          "ocamlc -g -open %s -a -o %s %s %s 2>&1| huh; (exit ${PIPESTATUS[0]})"
+          "ocamlc -g -open %s -a -o %s %s %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
           moduleName
           (ts cmaPath)
           (ts moduleAliasCmoPath)
@@ -561,7 +561,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
 
                  -o: output file name.
                  */
-              "ocamlc -g -I %s %s/js_of_ocaml.cma -open %s -o %s %s %s %s 2>&1| huh; (exit ${PIPESTATUS[0]})"
+              "ocamlc -g -I %s %s/js_of_ocaml.cma -open %s -o %s %s %s %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
               jsooLocation
               jsooLocation
               (tsm (libToModule topLibName))
