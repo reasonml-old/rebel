@@ -20,9 +20,9 @@ let ts = Path.to_string;
 
 let root = Path.the_root;
 
-let bash dir::dir command => Action.process dir::dir prog::"bash" args::["-c", command] ();
+let bash command => Action.process dir::root prog::"bash" args::["-c", command] ();
 
-let bashf dir::dir fmt => ksprintf (fun str => bash dir::dir str) fmt;
+let bashf fmt => ksprintf bash fmt;
 
 let nonBlank s =>
   switch (String.strip s) {
@@ -88,7 +88,6 @@ let namespacedName libName::libName path::path =>
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module
    tracking in the presence of `open` */
 let ocamlDep sourcePath::sourcePath => {
-  let srcDir = Path.dirname sourcePath;
   let flag = isInterface sourcePath ? "-intf" : "-impl";
   let action = Dep.action_stdout (
     mapD
@@ -96,17 +95,16 @@ let ocamlDep sourcePath::sourcePath => {
       (
         fun () =>
           bashf
-            dir::srcDir
             /* seems like refmt intelligently detects source code type (re/ml) */
             "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s"
             flag
-            (Path.basename sourcePath)
+            (ts sourcePath)
       )
   );
   let processRawString string =>
     switch (String.strip string |> String.split on::':') {
     | [original, deps] => (
-        rel dir::srcDir original,
+        rel dir::root original,
         String.split deps on::' ' |> List.filter f::nonBlank |> List.map f::(fun m => Mod m)
       )
     | _ => failwith "expected exactly one ':' in ocamldep output line"
@@ -153,10 +151,7 @@ let getThirdPartyLibNames ignoreJsoo::ignoreJsoo libDir::libDir => {
             fun () =>
               bashf
                 /* Swap the comment before `npm publish`. */
-                /* dir::root
-                   "./node_modules/jengaboot/buildUtils/extractDeps.out %s"
-                   (ts packageJsonPath) */
-                dir::root
+                /* "./node_modules/jengaboot/buildUtils/extractDeps.out %s" */
                 "./buildUtils/extractDeps.out %s"
                 (ts packageJsonPath)
           )
@@ -277,7 +272,6 @@ let moduleAliasFileScheme
       String.concat sep::"";
   let action =
     bashf
-      dir::root
       /* We suppress a few warnings here through -w.
          - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
          can't be found at the moment this module alias file is compiled. This is normal, since the
@@ -314,7 +308,7 @@ let moduleAliasFileScheme
 };
 
 let jsooLocationD =
-  mapD (Dep.action_stdout (Dep.return (bash dir::root "ocamlfind query js_of_ocaml"))) String.strip;
+  mapD (Dep.action_stdout (Dep.return (bash "ocamlfind query js_of_ocaml"))) String.strip;
 
 /* We compile each file in the current library (say, foo). If a file's Bar.re, it'll be compiled to
    foo__Bar.{cmi, cmo, cmt}. As to why we're namespacing compiled outputs like this, see
@@ -441,7 +435,6 @@ let compileSourcesScheme
               };
             let action =
               bashf
-                dir::root
                 /* Most of the flags here have been explained previously in `moduleAliasFileScheme`.
                    -intf-suffix: tells ocamlc what the interface file's extension is.
 
@@ -468,14 +461,11 @@ let compileSourcesScheme
                 (
                   List.map
                     thirdPartyLibNames
-                    f::(
-                      fun (Lib name) =>
-                        "-I " ^ Path.reach_from dir::root (rel dir::buildDirRoot name)
-                    ) |>
+                    f::(fun (Lib name) => "-I " ^ ts (rel dir::buildDirRoot name)) |>
                     String.concat sep::" "
                 )
                 (ts (rel dir::buildDir namespacedName'))
-                (Path.reach_from dir::root path);
+                (ts path);
             Rule.create targets::targets (mapD deps (fun () => action))
           }
         );
@@ -512,7 +502,6 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
       deps::(List.map [moduleAliasCmoPath, ...cmos] f::Dep.path)
       action::(
         bashf
-          dir::root
           /* Flags:
              -open: compile the file as if [file being opened] was opened at the top of the file. In
              our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
@@ -546,7 +535,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
       /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
       sortedSourcePaths
       f::(fun path => rel dir::buildDir (namespacedName libName::topLibName path::path ^ ".cmo"));
-  let cmosString = List.map cmos f::Path.basename |> String.concat sep::" ";
+  let cmosString = List.map cmos f::ts |> String.concat sep::" ";
   Scheme.dep (
     mapD
       (Dep.both jsooLocationD sortedTransitiveThirdPartyLibs)
@@ -558,7 +547,6 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
               f::(fun (Lib name) => rel dir::(rel dir::buildDirRoot name) libraryFileName);
           let action =
             bashf
-              dir::buildDir
               /* For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
                  the module invokes some jsoo's Js module-related stuff. */
               /* Example command: ocamlc -g -I path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma \
@@ -577,12 +565,9 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
               jsooLocation
               jsooLocation
               (tsm (libToModule topLibName))
-              (Path.basename binaryPath)
-              (
-                transitiveCmaPaths |>
-                  List.map f::(Path.reach_from dir::buildDir) |> String.concat sep::" "
-              )
-              (Path.basename moduleAliasCmoPath)
+              (ts binaryPath)
+              (transitiveCmaPaths |> List.map f::ts |> String.concat sep::" ")
+              (ts moduleAliasCmoPath)
               cmosString;
           Scheme.rules [
             Rule.simple
@@ -598,11 +583,10 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
               deps::[Dep.path binaryPath]
               action::(
                 bashf
-                  dir::buildDir
                   /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
                      output is still butt ugly. Just kidding I love you guys. */
                   "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s"
-                  (Path.basename binaryPath)
+                  (ts binaryPath)
               )
           ]
         }
