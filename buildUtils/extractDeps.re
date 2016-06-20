@@ -6,7 +6,7 @@ let packageJsonPath = Sys.argv.(1);
 let deps = [from_file packageJsonPath] |> Util.filter_member "dependencies" |> Util.filter_assoc;
 
 if (deps == []) {
-  print_endline ""
+  ()
 } else {
   List.hd deps |> List.map fst |> String.concat "\n" |> print_endline
 };

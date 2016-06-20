@@ -64,9 +64,10 @@ alias f="refmt -parse re -print ml jengarootReal.re \
 - Compiling A and B that both require C.
 - .rei interface files referencing third-party modules that source files don't (extra dependencies).
 - `open`ing a third-party library to refer to its module that happens to have the same name as one of our first-party modules.
-- compile libraries with mixed `re`, `rei`, `ml` and `mli` files.
+- Compile libraries with mixed `re`, `rei`, `ml` and `mli` files.
 - Symlinks.
-- third-party folders with kebab-case, snake_case, camelCase and CamelCase.
+- Third-party folders with kebab-case, snake_case, camelCase and CamelCase.
+- Not compiling unused dependencies.
 
 ## Credits
 The whole Jane Street team for making Jenga and helping me understanding it. Also to the whole Reason team of course.
