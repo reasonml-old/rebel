@@ -45,8 +45,11 @@ This repo's structure is a bit weird but convenient. The actual development of t
 - Do the previous sections' installs up until (including) yojson
 - `git clone` this repo
 - `npm install`
+- modify jengaroot logic in `jengaroot.re` (`jengaroot.ml` is the compiled result; the step below takes care of that automatically)
 - `./test.sh`
 - `_build/top/app.out` to see output, or open `index.html` to see output in console & on screen
+
+Publishing to npm is done inside `node_modules/jengaboot`. Don't do this yourself for now.
 
 ### Things to test
 - Support for source/interface interface files that are (uncapitalized, Capitalized) and (snake_cased, camelCased). Support third-party library names of the latter pair (npm modules can no longer be capitalized).
