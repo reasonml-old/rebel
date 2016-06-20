@@ -40,23 +40,15 @@ You need to have Jenga, YoJson and js_of_ocaml installed via OPAM:
 ## For Contributors
 Bother me on IRC/Twitter/issues/etc. for specific details.
 
+This repo's structure is a bit weird but convenient. The actual development of the jengaroot logic done in `node_modules/jengaboot`, and the whole repo simulates a magic spec compliant use-case of the jengaboot.
+
 - Do the previous sections' installs up until (including) yojson
 - `git clone` this repo
 - `npm install`
-- `jenga`
+- `./test.sh`
 - `_build/top/app.out` to see output, or open `index.html` to see output in console & on screen
 
-**To develop the jengaroot yourself**: have all the [Reason](https://github.com/facebook/reason) toolchain installed. Compile jengarootReal.re to jengaroot.ml. Here's a convenient compile & prettify command I've temporarily included in my bashrc/zshrc:
-
-```sh
-esc=$(printf '\033')
-alias f="refmt -parse re -print ml jengarootReal.re \
-  | sed 's/\[@explicit_arity \]//g' \
-  > jengaroot.ml \
-  && time jenga"
-```
-
-**Things to test**
+### Things to test
 - Support for source/interface interface files that are (uncapitalized, Capitalized) and (snake_cased, camelCased). Support third-party library names of the latter pair (npm modules can no longer be capitalized).
 - Compiles dangling unused source files and unused dependencies (for merlin editor integration, e.g. add a new dependency, compile, then start autocompleting that previously unused module).
 - Dependencies that contain the same source file names.
