@@ -1,22 +1,18 @@
 {
-  "name": "jengaboot",
-  "version": "0.0.16",
+  "name": "jengaboot-test",
+  "version": "0.0.0",
   "description": "Prototype that conforms to the magic-build spec. Implemented with Jenga.",
   "main": "index.js",
   "dependencies": {
     "bookshop": "*",
     "chenglou": "*",
     "Universal-cake-type": "*",
-    "js_of_ocaml": "*",
-    "ocamlBetterErrors": "0.0.1"
+    "js_of_ocaml": "*"
   },
-  "bin": {
-    "run": "run",
-    "compile": "compile"
+  "devDependencies": {
+    "jengaboot": "*"
   },
-  "devDependencies": {},
   "scripts": {
-    "postinstall": "ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractDeps.re -o buildUtils/extractDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractName.re -o buildUtils/extractName.out",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -28,5 +24,10 @@
   "bugs": {
     "url": "https://github.com/chenglou/jengaboot/issues"
   },
-  "homepage": "https://github.com/chenglou/jengaboot#readme"
+  "homepage": "https://github.com/chenglou/jengaboot#readme",
+  "jengaboot": {
+    "dependencies": {
+      "unix": "*"
+    }
+  }
 }
