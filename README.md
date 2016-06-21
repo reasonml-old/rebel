@@ -27,11 +27,12 @@ Prototype that conforms to the ideal [Reason](https://github.com/facebook/reason
 
 ## For Consumers
 
-You need to have Jenga, YoJson and js_of_ocaml installed via OPAM:
+You need to have Jenga, YoJson, Ocamlfind and js_of_ocaml installed via OPAM:
 - `opam update`
 - `opam pin add -y jenga https://github.com/chenglou/jenga.git#2a0eb726f503038ad70d43f8e8bbb4c41223108a`
 - `opam install js_of_ocaml`
 - `opam install yojson`
+- `opam install ocamlfind`
 - `npm install --save-dev jengaboot`
 - Write some files in your `src/`, or install some compliant (see above) npm packages.
 - `./node_modules/.bin/run`

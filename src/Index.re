@@ -11,4 +11,5 @@ let commonDep2 = Index.commonDep;
 let commonDep3 = ZyBook.a;
 let commonDep4 = VeryCommonName.z;
 
+/* print_endline (Unix.environment ()).(1); */
 Js.Unsafe.js_expr "document.write('assd')";

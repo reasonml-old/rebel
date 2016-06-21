@@ -4,12 +4,16 @@
   "description": "",
   "main": "index.js",
   "dependencies": {
-    "Universal-cake-type": "*",
-    "js_of_ocaml": "*"
+    "Universal-cake-type": "*"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "jengaboot": {
+    "ocamlfindDependencies": {
+      "js_of_ocaml": "*"
+    }
+  }
 }
