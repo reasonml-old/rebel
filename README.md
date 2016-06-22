@@ -46,7 +46,7 @@ This repo's structure is a bit weird but convenient. The actual development of t
 - `git clone` this repo
 - `npm install`
 - modify jengaroot logic in `node_modules/jengaboot/jengaroot.re` (`jengaroot.ml` is the compiled result; the step below takes care of that automatically)
-- modify package.json parsing logic in `node_modules/jengaboot/buildUtils/*`, then run `npm run postinstall` in `node_modules/jengaboot` (check that directory's readme and the `postinstall` command itself. They're self-explanatory.)
+- modify package.json parsing logic in `node_modules/jengaboot/buildUtils/*`, then run `npm run compileUtils` in `node_modules/jengaboot` (check that directory's readme and the `compileUtils` command itself. They're self-explanatory.)
 - `./test.sh`
 - `_build/top/app.out` to see output, or open `index.html` to see output in console & on screen
 
