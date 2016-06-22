@@ -11,11 +11,11 @@ Prototype that conforms to the ideal [Reason](https://github.com/facebook/reason
 - Generates the correct .merlin files for [Merlin](https://github.com/the-lambda-church/merlin).
 - Generates JavaScript output through [js_of_ocaml](http://ocsigen.org/js_of_ocaml/).
 - Peace-of-mind "wipe the whole world" : just remove `_build/`.
+- Works with OPAM/ocamlfind dependencies: put them in the `jengaboot.ocamlfindDependencies` field, [like so](https://github.com/chenglou/jengaboot/blob/e4a8860617b1c27f0faeeb40082476a22c5e07df/package.json#L28).
 
 **Coming soon**:
 - Generates utop/rtop bootstrap file.
 - Generates documentation based on `mli`/`rei` interface files.
-- Works with OPAM dependencies.
 - Easier installation: bundle Jenga, etc.
 
 ## "Ideal Reason Project" Spec
@@ -36,7 +36,6 @@ You need to have Jenga, YoJson, Ocamlfind and js_of_ocaml installed via OPAM:
 - `npm install --save-dev jengaboot`
 - Write some files in your `src/`, or install some compliant (see above) npm packages.
 - `./node_modules/.bin/run`
-
 
 ## For Contributors
 Bother me on IRC/Twitter/issues/etc. for specific details.
