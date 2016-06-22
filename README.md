@@ -11,11 +11,11 @@ Prototype that conforms to the ideal [Reason](https://github.com/facebook/reason
 - Generates the correct .merlin files for [Merlin](https://github.com/the-lambda-church/merlin).
 - Generates JavaScript output through [js_of_ocaml](http://ocsigen.org/js_of_ocaml/).
 - Peace-of-mind "wipe the whole world" : just remove `_build/`.
+- Works with OPAM/ocamlfind dependencies: put them in the `jengaboot.ocamlfindDependencies` field, [like so](https://github.com/chenglou/jengaboot/blob/e4a8860617b1c27f0faeeb40082476a22c5e07df/package.json#L28).
 
 **Coming soon**:
 - Generates utop/rtop bootstrap file.
 - Generates documentation based on `mli`/`rei` interface files.
-- Works with OPAM dependencies.
 - Easier installation: bundle Jenga, etc.
 
 ## "Ideal Reason Project" Spec
@@ -37,7 +37,6 @@ You need to have Jenga, YoJson, Ocamlfind and js_of_ocaml installed via OPAM:
 - Write some files in your `src/`, or install some compliant (see above) npm packages.
 - `./node_modules/.bin/run`
 
-
 ## For Contributors
 Bother me on IRC/Twitter/issues/etc. for specific details.
 
@@ -46,7 +45,8 @@ This repo's structure is a bit weird but convenient. The actual development of t
 - Do the previous sections' installs up until (including) yojson
 - `git clone` this repo
 - `npm install`
-- modify jengaroot logic in `jengaroot.re` (`jengaroot.ml` is the compiled result; the step below takes care of that automatically)
+- modify jengaroot logic in `node_modules/jengaboot/jengaroot.re` (`jengaroot.ml` is the compiled result; the step below takes care of that automatically)
+- modify package.json parsing logic in `node_modules/jengaboot/buildUtils/*`, then run `npm run postinstall` in `node_modules/jengaboot` (check that directory's readme and the `postinstall` command itself. They're self-explanatory.)
 - `./test.sh`
 - `_build/top/app.out` to see output, or open `index.html` to see output in console & on screen
 
