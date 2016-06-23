@@ -35,7 +35,7 @@ You need to have Jenga, YoJson, Ocamlfind and js_of_ocaml installed via OPAM:
 - `opam install ocamlfind`
 - `npm install --save-dev jengaboot`
 - Write some files in your `src/`, or install some compliant (see above) npm packages.
-- `./node_modules/.bin/run`
+- `./node_modules/.bin/boot`
 
 ## For Contributors
 Bother me on IRC/Twitter/issues/etc. for specific details.
