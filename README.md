@@ -33,7 +33,7 @@ Build system that conforms to the ideal [Reason](https://github.com/facebook/rea
 
 You need to have Jenga, YoJson, Ocamlfind and js_of_ocaml installed via OPAM. Additionally, please have `realpath` command-line util installed (temporary requirement).
 - `opam update`
-- `opam pin add -y jenga https://github.com/chenglou/jenga.git#2a0eb726f503038ad70d43f8e8bbb4c41223108a`
+- `opam pin add -y jenga https://github.com/chenglou/jenga.git#5014bf62bb15fc9649debf214c4f5c3ef54f4682`
 - `opam install js_of_ocaml`
 - `opam install yojson`
 - `opam install ocamlfind`
@@ -56,7 +56,7 @@ Bother me on IRC/Twitter/issues/etc. for specific details.
 This repo's structure is a bit weird but convenient. The actual development of the jengaroot logic done in `node_modules/jengaboot`, and the whole repo simulates a magic spec compliant use-case of the jengaboot.
 
 - `opam update`
-- `opam pin add -y jenga https://github.com/chenglou/jenga.git#2a0eb726f503038ad70d43f8e8bbb4c41223108a`
+- `opam pin add -y jenga https://github.com/chenglou/jenga.git#5014bf62bb15fc9649debf214c4f5c3ef54f4682`
 - `opam install js_of_ocaml`
 - `opam install yojson`
 - `opam install ocamlfind`
@@ -78,7 +78,7 @@ Publishing to npm is done inside `node_modules/jengaboot`. Don't do this yoursel
 - .rei interface files referencing third-party modules that source files don't (extra dependencies).
 - `open`ing a third-party library to refer to its module that happens to have the same name as one of our first-party modules.
 - Compile libraries with mixed `re`, `rei`, `ml` and `mli` files.
-- Symlinks.
+- Symlinks (relative and absolute).
 - Third-party folders with kebab-case, snake_case, camelCase and CamelCase.
 - Not compiling unused dependencies.
 
