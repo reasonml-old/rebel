@@ -51,7 +51,7 @@ Jenga generates a `.jenga` directory that caches the build info. `_build/` (wher
 In short, put `.jenga`, `_build` and `.merlin` in your `.gitignore` and `.npmignore`.
 
 ## For Contributors
-Bother me on IRC/Twitter/issues/etc. for specific details.
+Ping me on IRC (chenglou)/Twitter (@_chenglou)/issues/etc. for specific details.
 
 This repo's structure is a bit weird but convenient. The actual development of the jengaroot logic done in `node_modules/jengaboot`, and the whole repo simulates a magic spec compliant use-case of the jengaboot.
 
