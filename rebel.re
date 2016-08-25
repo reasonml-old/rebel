@@ -138,6 +138,37 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
     )
 };
 
+/* Extract backend from jengaboot.backend field of package.json */
+let backendTarget = {
+  let packageJsonPath = rel dir::root "package.json";
+  mapD
+    (
+      Dep.action_stdout (
+        mapD
+          (Dep.path packageJsonPath)
+          /* This compiled jengaroot.ml file actually resides in node_modules/jengaboot/. We symlink it to the
+             top just so that we could make jenga's `root` point to the top. This explains the
+             node_modules/bla part of the path */
+          (
+            fun () =>
+              bashf
+                "ocamlrun ./node_modules/rebel/buildUtils/extractBackend.out %s 2>&1; (exit ${PIPESTATUS[0]})"
+                (ts packageJsonPath)
+          )
+      )
+    )
+    (
+      fun content =>
+        String.split content on::'\n' |> List.map f::(fun x => {
+          switch x {
+          | "native" | "javascript" => x
+          | _ => ""
+          }
+        }) |> List.filter f::(fun x => x != "")
+    );
+};
+
+/* Simply read into the package.json "dependencies" field. */
 let isDirRebelCampatible libDir::libDir => {
   let packageJsonPath = rel dir::libDir "package.json";
   mapD
@@ -608,13 +639,20 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
     mapD
       (
         Dep.both
-          sortedTransitiveThirdPartyNpmLibsIncludingSelf's
-          transitiveThirdPartyOcamlfindLibsIncludingSelf's
+          backendTarget
+          (
+            Dep.both
+              sortedTransitiveThirdPartyNpmLibsIncludingSelf's
+              transitiveThirdPartyOcamlfindLibsIncludingSelf's
+          )
       )
       (
         fun (
-              sortedTransitiveThirdPartyNpmLibsIncludingSelf's',
-              transitiveThirdPartyOcamlfindLibsIncludingSelf's'
+              backend,
+              (
+                sortedTransitiveThirdPartyNpmLibsIncludingSelf's',
+                transitiveThirdPartyOcamlfindLibsIncludingSelf's'
+              )
             ) => {
           let transitiveCmaPaths =
             List.map
@@ -652,26 +690,40 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
               (transitiveCmaPaths |> List.map f::ts |> String.concat sep::" ")
               (ts moduleAliasCmoPath)
               cmosString;
-          Scheme.rules [
-            Rule.simple
-              targets::[binaryOutput]
-              deps::(
-                /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-                [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
-              )
-              action::action,
-            Rule.simple
-              targets::[jsOutput]
-              deps::[Dep.path binaryOutput]
-              action::(
-                bashf
-                  /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
-                     output is still butt ugly. Just kidding I love you guys. */
-                  "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
-                  (ts jsOutput)
-                  (ts binaryOutput)
-              )
-          ]
+
+          /* let backends = getBackends (); */
+
+          /* List.iter f::print_endline backends; */
+
+          let nativeRule =
+            List.exists f::(fun x => x == "native") backend ?
+              [
+                Rule.simple
+                  targets::[binaryOutput]
+                  deps::(
+                    /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
+                    [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
+                  )
+                  action::action
+              ] :
+              [];
+          let javascriptRule =
+            List.exists f::(fun x => x == "javascript") backend ?
+              [
+                Rule.simple
+                  targets::[jsOutput]
+                  deps::[Dep.path binaryOutput]
+                  action::(
+                    bashf
+                      /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
+                         output is still butt ugly. Just kidding I love you guys. */
+                      "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
+                      (ts jsOutput)
+                      (ts binaryOutput)
+                  )
+              ] :
+              [];
+          Scheme.rules (List.append nativeRule javascriptRule)
         }
       )
   )
