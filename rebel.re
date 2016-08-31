@@ -2,7 +2,6 @@
  * vim: set ft=rust:
  * vim: set ft=reason:
  */
-
 open Core.Std;
 
 open Async.Std;
@@ -42,7 +41,7 @@ let isInterface path => {
   String.is_suffix base suffix::".rei" || String.is_suffix base suffix::".mli"
 };
 
-/* this jengaroot-specific helpers */
+/* this rebel-specific helpers */
 type moduleName = | Mod string;
 
 type libName = | Lib string;
@@ -139,33 +138,67 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
     )
 };
 
-/* Simply read into the package.json "dependencies" field. */
-let getThirdPartyNpmLibs libDir::libDir => {
+let isDirRebelCampatible libDir::libDir => {
   let packageJsonPath = rel dir::libDir "package.json";
   mapD
     (
       Dep.action_stdout (
         mapD
           (Dep.path packageJsonPath)
-          /* This compiled jengaroot.ml file actually resides in node_modules/jengaboot/. We symlink it to the
-             top just so that we could make jenga's `root` point to the top. This explains the
-             node_modules/bla part of the path */
           (
             fun () =>
               bashf
-                "ocamlrun ./node_modules/jengaboot/buildUtils/extractDeps.out %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+                "ocamlrun ./node_modules/rebel/buildUtils/isDepRebelCompatible.out %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
                 (ts packageJsonPath)
           )
       )
     )
-    (
-      fun content =>
-        String.split content on::'\n' |>
-          List.filter f::nonBlank |> List.map f::(fun name => Lib name)
-    )
+    (fun s => bool_of_string (String.strip s))
 };
 
-/* Simply read into the package.json "jengaboot.ocamlfindDependencies" field. */
+let withRebelCompatibleLibs libs =>
+  mapD
+    (
+      List.map
+        libs
+        f::(
+          fun lib =>
+            Dep.both
+              (isDirRebelCampatible libDir::(rel dir::nodeModulesRoot (tsl lib))) (Dep.return lib)
+        )
+        |> Dep.all
+    )
+    (fun list => List.filter f::(fun (a, _) => a) list |> List.map f::(fun (_, b) => b));
+
+/* Simply read into the package.json "dependencies" field. */
+let getThirdPartyNpmLibs libDir::libDir => {
+  let packageJsonPath = rel dir::libDir "package.json";
+  let deps =
+    mapD
+      (
+        Dep.action_stdout (
+          mapD
+            (Dep.path packageJsonPath)
+            /* This compiled rebel.ml file actually resides in node_modules/rebel/. We symlink it to the
+               top just so that we could make jenga's `root` point to the top. This explains the
+               node_modules/bla part of the path */
+            (
+              fun () =>
+                bashf
+                  "ocamlrun ./node_modules/rebel/buildUtils/extractDeps.out %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+                  (ts packageJsonPath)
+            )
+        )
+      )
+      (
+        fun content =>
+          String.split content on::'\n' |>
+            List.filter f::nonBlank |> List.map f::(fun name => Lib name)
+      );
+  bindD deps withRebelCompatibleLibs
+};
+
+/* Simply read into the package.json "rebel.ocamlfindDependencies" field. */
 let getThirdPartyOcamlfindLibs libDir::libDir => {
   let packageJsonPath = rel dir::libDir "package.json";
   mapD
@@ -173,13 +206,13 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
       Dep.action_stdout (
         mapD
           (Dep.path packageJsonPath)
-          /* This compiled jengaroot.ml file actually resides in node_modules/jengaboot/. We symlink it to the
+          /* This compiled rebel.ml file actually resides in node_modules/rebel/. We symlink it to the
              top just so that we could make jenga's `root` point to the top. This explains the
              node_modules/bla part of the path */
           (
             fun () =>
               bashf
-                "ocamlrun ./node_modules/jengaboot/buildUtils/extractOcamlfindDeps.out %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+                "ocamlrun ./node_modules/rebel/buildUtils/extractOcamlfindDeps.out %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
                 (ts packageJsonPath)
           )
       )
@@ -291,7 +324,7 @@ let sortPathsTopologically paths::paths => {
    compiled with foo.re pre-opened of course), they won't see module A or B, only Foo__A and Foo__B, aka in
    practice, they simply won't see them. This effectively means we've implemented namespacing!
 
-   Note that we're generating a ml file rather than re, because this jengaroot theoretically works on pure
+   Note that we're generating a ml file rather than re, because this rebel theoretically works on pure
    ocaml projects too, with no dep on reason. */
 let moduleAliasFileScheme
     buildDir::buildDir
@@ -624,8 +657,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
               targets::[binaryOutput]
               deps::(
                 /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-                [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |>
-                  List.map f::Dep.path
+                [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
               )
               action::action,
             Rule.simple
@@ -717,8 +749,8 @@ PKG %s
 
 # FLG is the set of flags to pass to Merlin, as if it used ocamlc to compile and
 # understand our sources. You don't have to understand what these flags are for
-# now; but if you're curious, go check the jengaroot.ml that generated this
-# .merlin at https://github.com/chenglou/jengaboot
+# now; but if you're curious, go check the rebel.ml that generated this
+# .merlin at https://github.com/reasonml/rebel
 FLG -w -30 -w -40 -open %s
 |}
         (isTopLevelLib ? "S src" : "")

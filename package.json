@@ -1,34 +1,24 @@
 {
-  "name": "jengaboot-test",
-  "version": "0.0.0",
-  "description": "Prototype that conforms to the magic-build spec. Implemented with Jenga.",
-  "main": "index.js",
+  "bin": {
+    "compile": "compile",
+    "run": "run"
+  },
   "dependencies": {
-    "bookshop": "*",
-    "chenglou": "*",
-    "Universal-cake-type": "*"
+    "reason": "https://github.com/facebook/reason",
+    "nopam": "https://github.com/yunxing/nopam.git",
+    "dependency-env": "https://github.com/npm-ml/dependency-env.git",
+    "yojson": "https://github.com/npm-ml/dependency-env.git",
+    "ocamlfind": "https://github.com/npm-opam/ocamlfind",
+    "jenga": "https://github.com/npm-opam/jenga",
+    "js_of_ocaml": "https://github.com/npm-opam/js_of_ocaml"
   },
-  "devDependencies": {
-    "jengaboot": "*"
-  },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "ocaml -version"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/chenglou/jengaboot.git"
-  },
-  "author": "",
+  "description": "Prototype that conforms to the magic-build spec. Implemented with Jenga.",
+  "devDependencies": {},
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/chenglou/jengaboot/issues"
+  "name": "rebel",
+  "scripts": {
+    "postinstall": "eval $(dependencyEnv) && nopam && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractDeps.re -o buildUtils/extractDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractOcamlfindDeps.re -o buildUtils/extractOcamlfindDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/isDepRebelCompatible.re -o buildUtils/isDepRebelCompatible.out && refmt -print ml -parse re rebel.re > rebel.ml",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "homepage": "https://github.com/chenglou/jengaboot#readme",
-  "jengaboot": {
-    "ocamlfindDependencies": {
-      "js_of_ocaml": "*",
-      "unix": "*"
-    }
-  }
+  "version": "0.0.23"
 }
