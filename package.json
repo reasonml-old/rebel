@@ -7,7 +7,7 @@
     "reason": "https://github.com/facebook/reason",
     "nopam": "https://github.com/yunxing/nopam.git",
     "dependency-env": "https://github.com/npm-ml/dependency-env.git",
-    "yojson": "https://github.com/npm-ml/dependency-env.git",
+    "yojson": "https://github.com/npm-opam/yojson",
     "ocamlfind": "https://github.com/npm-opam/ocamlfind",
     "jenga": "https://github.com/npm-opam/jenga",
     "js_of_ocaml": "https://github.com/npm-opam/js_of_ocaml"
