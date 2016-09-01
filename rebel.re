@@ -97,7 +97,7 @@ let ocamlDep sourcePath::sourcePath => {
         fun () =>
           bashf
             /* seems like refmt intelligently detects source code type (re/ml) */
-            "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+            "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s 2>&1; (exit ${PIPESTATUS[0]})"
             flag
             (ts sourcePath)
       )
@@ -148,7 +148,7 @@ let isDirRebelCampatible libDir::libDir => {
           (
             fun () =>
               bashf
-                "ocamlrun ./node_modules/rebel/buildUtils/isDepRebelCompatible.out %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+                "ocamlrun ./node_modules/rebel/buildUtils/isDepRebelCompatible.out %s 2>&1; (exit ${PIPESTATUS[0]})"
                 (ts packageJsonPath)
           )
       )
@@ -185,7 +185,7 @@ let getThirdPartyNpmLibs libDir::libDir => {
             (
               fun () =>
                 bashf
-                  "ocamlrun ./node_modules/rebel/buildUtils/extractDeps.out %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+                  "ocamlrun ./node_modules/rebel/buildUtils/extractDeps.out %s 2>&1; (exit ${PIPESTATUS[0]})"
                   (ts packageJsonPath)
             )
         )
@@ -212,7 +212,7 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
           (
             fun () =>
               bashf
-                "ocamlrun ./node_modules/rebel/buildUtils/extractOcamlfindDeps.out %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+                "ocamlrun ./node_modules/rebel/buildUtils/extractOcamlfindDeps.out %s 2>&1; (exit ${PIPESTATUS[0]})"
                 (ts packageJsonPath)
           )
       )
@@ -372,7 +372,7 @@ let moduleAliasFileScheme
 
          -o: output name
          */
-      "ocamlc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+      "ocamlc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
       (ts sourcePath)
       (ts cmo);
   /* TODO: do we even need the cmo file here? */
@@ -519,13 +519,13 @@ let compileSourcesScheme
                  path/to/CurrentSourcePath.re */
               (
                 if isInterface' {
-                  "ocamlfind ocamlc %s -pp refmt -g -w -30 -w -40 -open %s -I %s %s -o %s -c -intf %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+                  "ocamlfind ocamlc %s -pp refmt -g -w -30 -w -40 -open %s -I %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
                 } else if (
                   String.is_suffix (Path.basename path) suffix::".re"
                 ) {
-                  "ocamlfind ocamlc %s -pp refmt -bin-annot -g -w -30 -w -40 -open %s -I %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+                  "ocamlfind ocamlc %s -pp refmt -bin-annot -g -w -30 -w -40 -open %s -I %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
                 } else {
-                  "ocamlfind ocamlc %s -pp refmt -bin-annot -g -w -30 -w -40 -open %s -I %s %s -o %s -c -impl %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+                  "ocamlfind ocamlc %s -pp refmt -bin-annot -g -w -30 -w -40 -open %s -I %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
                 }
               )
               ocamlfindPackagesStr
@@ -582,7 +582,7 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
              -o: output file name.
              */
           /* Example command: ocamlc -g -open Foo -a -o lib.cma foo.cmo aDependsOnMe.cmo a.cmo b.cmo */
-          "ocamlc -g -open %s -a -o %s %s %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+          "ocamlc -g -open %s -a -o %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
           moduleName
           (ts cmaPath)
           (ts moduleAliasCmoPath)
@@ -645,7 +645,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
 
                  -o: output file name.
                  */
-              "ocamlfind ocamlc %s -g -open %s -o %s %s %s %s 2>&1| node_modules/.bin/berror; (exit ${PIPESTATUS[0]})"
+              "ocamlfind ocamlc %s -g -open %s -o %s %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
               ocamlfindPackagesStr
               (tsm (libToModule topLibName))
               (ts binaryOutput)
