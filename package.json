@@ -17,7 +17,7 @@
   "license": "ISC",
   "name": "rebel",
   "scripts": {
-    "postinstall": "eval $(dependencyEnv) && nopam && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractDeps.re -o buildUtils/extractDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractOcamlfindDeps.re -o buildUtils/extractOcamlfindDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/isDepRebelCompatible.re -o buildUtils/isDepRebelCompatible.out && refmt -print ml -parse re rebel.re > rebel.ml",
+    "postinstall": "eval $(dependencyEnv) && nopam && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractDeps.re -o buildUtils/extractDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractOcamlfindDeps.re -o buildUtils/extractOcamlfindDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/isDepRebelCompatible.re -o buildUtils/isDepRebelCompatible.out && refmt -assume-explicit-arity -print ml -parse re rebel.re > rebel.ml",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "version": "0.0.23"
