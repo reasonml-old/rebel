@@ -9,7 +9,7 @@
     "dependency-env": "https://github.com/npm-ml/dependency-env.git",
     "yojson": "https://github.com/npm-opam/yojson",
     "ocamlfind": "https://github.com/npm-opam/ocamlfind",
-    "jenga": "https://github.com/reasonml/jenga-bin",
+    "jenga-bin": "https://github.com/reasonml/jenga-bin",
     "js_of_ocaml": "https://github.com/npm-opam/js_of_ocaml"
   },
   "description": "Prototype that conforms to the magic-build spec. Implemented with Jenga.",
