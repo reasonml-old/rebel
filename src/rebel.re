@@ -4,6 +4,8 @@
  */
 open Core.Std;
 
+open Yojson.Basic;
+
 open Async.Std;
 
 open Jenga_lib.Api;
@@ -142,20 +144,12 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
 
 let isDirRebelCampatible libDir::libDir => {
   let packageJsonPath = rel dir::libDir "package.json";
+
   mapD
     (
-      Dep.action_stdout (
-        mapD
-          (Dep.path packageJsonPath)
-          (
-            fun () =>
-              bashf
-                "ocamlrun ./node_modules/rebel/buildUtils/isDepRebelCompatible.out %s 2>&1; (exit ${PIPESTATUS[0]})"
-                (ts packageJsonPath)
-          )
-      )
+      Dep.path packageJsonPath
     )
-    (fun s => bool_of_string (String.strip s))
+    (fun s => ([from_file (ts packageJsonPath)] |> Util.filter_member "rebel" |> List.length) != 0)
 };
 
 let withRebelCompatibleLibs libs =>
@@ -177,24 +171,17 @@ let getThirdPartyNpmLibs libDir::libDir => {
   let deps =
     mapD
       (
-        Dep.action_stdout (
-          mapD
-            (Dep.path packageJsonPath)
-            /* This compiled rebel.ml file actually resides in node_modules/rebel/. We symlink it to the
-               top just so that we could make jenga's `root` point to the top. This explains the
-               node_modules/bla part of the path */
-            (
-              fun () =>
-                bashf
-                  "ocamlrun ./node_modules/rebel/buildUtils/extractDeps.out %s 2>&1; (exit ${PIPESTATUS[0]})"
-                  (ts packageJsonPath)
-            )
-        )
+        Dep.path packageJsonPath
       )
       (
-        fun content =>
-          String.split content on::'\n' |> List.filter f::nonBlank |>
-          List.map f::(fun name => Lib name)
+        fun content => {
+          let deps = [from_file (ts packageJsonPath)] |> Util.filter_member "dependencies" |> Util.filter_assoc;
+
+          switch deps {
+            | [x] => x |> List.map f::fst |> List.map f::(fun name => Lib name)
+            | _ => []
+          }
+        }
       );
   bindD deps withRebelCompatibleLibs
 };
@@ -204,24 +191,19 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
   let packageJsonPath = rel dir::libDir "package.json";
   mapD
     (
-      Dep.action_stdout (
-        mapD
-          (Dep.path packageJsonPath)
-          /* This compiled rebel.ml file actually resides in node_modules/rebel/. We symlink it to the
-             top just so that we could make jenga's `root` point to the top. This explains the
-             node_modules/bla part of the path */
-          (
-            fun () =>
-              bashf
-                "ocamlrun ./node_modules/rebel/buildUtils/extractOcamlfindDeps.out %s 2>&1; (exit ${PIPESTATUS[0]})"
-                (ts packageJsonPath)
-          )
-      )
+      Dep.path packageJsonPath
     )
     (
-      fun content =>
-        String.split content on::'\n' |> List.filter f::nonBlank |>
-        List.map f::(fun name => Lib name)
+      fun content => {
+        let deps =
+          from_file (ts packageJsonPath) |>
+            Util.member "rebel" |> Util.to_option (fun a => a |> Util.member "ocamlfindDependencies");
+
+        switch deps {
+        | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Lib name)
+        | _ => []
+        };
+      }
     )
 };
 
@@ -765,6 +747,7 @@ FLG -w -30 -w -40 -open %s
       targets::[dotMerlinPath] (mapD (getThirdPartyOcamlfindLibs libDir::dir) saveMerlinAction)
   ]
 };
+
 
 let scheme dir::dir => {
   ignore dir;

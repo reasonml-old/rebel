@@ -14,12 +14,8 @@
   "license": "ISC",
   "name": "rebel",
   "scripts": {
-    "extract:deps": "ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractDeps.re -o buildUtils/extractDeps.out",
-    "extract:ocamlfind-deps": "ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractOcamlfindDeps.re -o buildUtils/extractOcamlfindDeps.out",
-    "extract:rebel-compat": "ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/isDepRebelCompatible.re -o buildUtils/isDepRebelCompatible.out",
-    "extract": "npm run extract:deps && npm run extract:ocamlfind-deps && npm run extract:rebel-compat",
     "rebel-to-ml": "refmt -print ml -parse re rebel.re | sed 's/\\[@explicit_arity \\]//g' > rebel.ml",
-    "postinstall": "eval $(dependencyEnv) && nopam && npm run extract && npm run rebel-to-ml",
+    "postinstall": "eval $(dependencyEnv) && nopam && npm run rebel-to-ml",
     "rebel": "eval $(dependencyEnv) && nopam && ./configure --prefix $opam_prefix && make"
   },
   "version": "0.0.23"
