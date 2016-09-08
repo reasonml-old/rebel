@@ -2,752 +2,496 @@
  * vim: set ft=rust:
  * vim: set ft=reason:
  */
+
 open Core.Std;
-
 open Yojson.Basic;
+open Jenga_lib;
 
-open Async.Std;
-
-open Jenga_lib.Api;
-
-/* general helpers */
-let mapD = Dep.map;
-
-let bindD = Dep.bind;
-
-let rel = Path.relative;
-
-let ts = Path.to_string;
-
-let root = Path.the_root;
-
-let bash command => Action.process dir::root prog::"bash" args::["-c", command] ();
-
-let bashf fmt => ksprintf bash fmt;
-
-let nonBlank s =>
-  switch (String.strip s) {
-  | "" => false
-  | _ => true
+/*
+  =====================================================
+    COPIED CODE BEGIN
+  =====================================================
+ */
+let terminal_type =
+  switch (Core.Std.Sys.getenv "TERM") {
+  | None => ""
+  | Some x => x
   };
 
-let relD dir::dir str => Dep.path (rel dir::dir str);
+let module Spec = Command.Spec;
 
-/* assumes there is a suffix to chop. Throws otherwise */
-let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
+let module Param = Command.Param;
 
-let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
+let (%:) = Spec.(%:);
 
-let isInterface path => {
-  let base = Path.basename path;
-  String.is_suffix base suffix::".rei" || String.is_suffix base suffix::".mli"
-};
-
-/* this rebel-specific helpers */
-type moduleName =
-  | Mod string;
-
-type libName =
-  | Lib string;
-
-let topLibName = Lib "top";
-
-let libraryFileName = "lib.cma";
-
-let nodeModulesRoot = rel dir::root "node_modules";
-
-let buildDirRoot = rel dir::root "_build";
-
-let topSrcDir = rel dir::root "src";
-
-let tsm (Mod s) => s;
-
-let tsl (Lib s) => s;
-
-let binaryOutput = rel dir::(rel dir::buildDirRoot (tsl topLibName)) "app.out";
-
-let jsOutput = rel dir::(rel dir::buildDirRoot (tsl topLibName)) "app.js";
-
-let kebabToCamel =
-  String.foldi
-    init::""
-    f::(
-      fun _ accum char =>
-        if (accum == "") {
-          Char.to_string char
-        } else if (accum.[String.length accum - 1] == '-') {
-          String.slice accum 0 (-1) ^ (Char.to_string char |> String.capitalize)
-        } else {
-          accum ^ Char.to_string char
-        }
-    );
-
-let libToModule (Lib name) => Mod (String.capitalize name |> kebabToCamel);
-
-let pathToModule path => Mod (fileNameNoExtNoDir path |> String.capitalize);
-
-let namespacedName libName::libName path::path =>
-  tsm (libToModule libName) ^ "__" ^ tsm (pathToModule path);
-
-/* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
-   ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module
-   tracking in the presence of `open` */
-let ocamlDep sourcePath::sourcePath => {
-  let flag = isInterface sourcePath ? "-intf" : "-impl";
-  let action = Dep.action_stdout (
-    mapD
-      (Dep.path sourcePath)
-      (
-        fun () =>
-          bashf
-            /* seems like refmt intelligently detects source code type (re/ml) */
-            "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s 2>&1; (exit ${PIPESTATUS[0]})"
-            flag
-            (ts sourcePath)
-      )
-  );
-  let processRawString string =>
-    switch (String.strip string |> String.split on::':') {
-    | [original, deps] => (
-        rel dir::root original,
-        String.split deps on::' ' |> List.filter f::nonBlank |> List.map f::(fun m => Mod m)
-      )
-    | _ => failwith "expected exactly one ':' in ocamldep output line"
+let j_number = {
+  let (formula, default) =
+    switch System.num_cpus_if_known {
+    | None => ("", 1)
+    | Some cpus => (" = max (#cpus-1) 1", Int.max (cpus - 1) 1)
     };
-  mapD action processRawString
+  Param.flag
+    "j"
+    (Spec.optional_with_default default Spec.int)
+    doc::(sprintf "<jobs> parallel jobs, def: %d%s" default formula)
 };
 
-/* Get only the dependencies on sources in the current library. */
-let ocamlDepCurrentSources sourcePath::sourcePath => {
-  let srcDir = Path.dirname sourcePath;
-  bindD
-    (ocamlDep sourcePath::sourcePath)
-    (
-      fun (original, deps) =>
-        mapD
-          (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}"))
-          (
-            fun sourcePaths => {
-              let originalModule = pathToModule original;
-              /* Dedupe, because we might have foo.re and foo.rei */
-              let sourceModules = List.map sourcePaths f::pathToModule |> List.dedup;
-              /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
-                 itself, which means that Foo either comes from a third-party module (which we can ignore
-                 here), or is a nested module from an `open`ed module, which ocamldep would have detected and
-                 returned in this list. */
-              List.filter deps f::(fun m => m != originalModule) |>
-              List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
-            }
-          )
-    )
-};
-
-let isDirRebelCampatible libDir::libDir => {
-  let packageJsonPath = rel dir::libDir "package.json";
-  [from_file (ts packageJsonPath)] |> Util.filter_member "rebel" |> List.length != 0
-};
-
-let withRebelCompatibleLibs =
-  List.filter f::(fun lib => isDirRebelCampatible libDir::(rel dir::nodeModulesRoot (tsl lib)));
-
-/* Simply read into the package.json "dependencies" field. */
-let getThirdPartyNpmLibs libDir::libDir => {
-  let packageJsonPath = rel dir::libDir "package.json";
-  let deps =
-    [from_file (ts packageJsonPath)] |> Util.filter_member "dependencies" |> Util.filter_assoc;
-  let libs =
-    switch deps {
-    | [x] => x |> List.map f::fst |> List.map f::(fun name => Lib name)
-    | _ => []
+let f_number = {
+  let (formula, default) =
+    switch System.num_cpus_if_known {
+    | None => ("", 1)
+    | Some cpus => (" = (#cpus-1)/4 + 1", (cpus - 1) / 4 + 1)
     };
-  withRebelCompatibleLibs libs
+  Param.flag
+    "f"
+    (Spec.optional_with_default default Spec.int)
+    doc::(sprintf "<forkers> forker processes, def: %d%s" default formula)
 };
 
-/* Simply read into the package.json "rebel.ocamlfindDependencies" field. */
-let getThirdPartyOcamlfindLibs libDir::libDir => {
-  let packageJsonPath = rel dir::libDir "package.json";
-  let deps =
-    from_file (ts packageJsonPath) |> Util.member "rebel" |>
-    Util.to_option (fun a => a |> Util.member "ocamlfindDependencies");
-  switch deps {
-  | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Lib name)
-  | _ => []
-  }
+let d_number = {
+  let (formula, default) =
+    /* same defaults as for -j */
+    switch System.num_cpus_if_known {
+    | None => ("", 1)
+    | Some cpus => (" = max (#cpus-1) 1", Int.max (cpus - 1) 1)
+    };
+  Param.flag
+    "max-par-digest"
+    (Spec.optional_with_default default Spec.int)
+    doc::(sprintf "<digests> parallel digests, def: %d%s" default formula)
 };
 
-/* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
-   sorted into [c, d, b, a] or [c, b, d, a], aka the ones being depended on will always come before the
-   dependent */
-let topologicalSort graph => {
-  let graph = {contents: graph};
-  let rec topologicalSort' currNode accum => {
-    let nodeDeps =
-      switch (List.Assoc.find graph.contents currNode) {
-      /* node not found: presume to be third-party dep. This is slightly dangerous because it might also mean
-         we didn't construct the graph correctly. */
-      | None => []
-      | Some nodeDeps' => nodeDeps'
-      };
-    List.iter nodeDeps f::(fun dep => topologicalSort' dep accum);
-    if (List.for_all accum.contents f::(fun n => n != currNode)) {
-      accum := [currNode, ...accum.contents];
-      graph := List.Assoc.remove graph.contents currNode
-    }
-  };
-  let accum = {contents: []};
-  while (not (List.is_empty graph.contents)) {
-    topologicalSort' (fst (List.hd_exn graph.contents)) accum
-  };
-  List.rev accum.contents
+let poll_forever =
+  Param.flag
+    "poll-forever"
+    aliases::["P"]
+    Spec.no_arg
+    doc::" poll filesystem for changes (keep polling forever)";
+
+let stop_on_first_error =
+  Param.flag
+    "stop-on-first-error" aliases::["Q"] Spec.no_arg doc::" stop when first error encounterd";
+
+let verbose =
+  Param.flag
+    "verbose"
+    aliases::["--verbose"]
+    Spec.no_arg
+    doc::" Show full command string, and stdout/stderr from every command run";
+
+let show_actions_run =
+  Param.flag
+    "show-actions-run"
+    aliases::["act", "rr"]
+    Spec.no_arg
+    doc::" Show actions being run; and the reason why";
+
+let show_actions_run_verbose =
+  Param.flag
+    "show-actions-run-verbose"
+    aliases::["act-verbose", "rr-verbose"]
+    Spec.no_arg
+    doc::" Be more verbose about the reason actions are run";
+
+let show_buildable_discovery =
+  Param.flag
+    "show-buildable-discovery"
+    aliases::["buildable"]
+    Spec.no_arg
+    doc::" Mainly for debug. Shows discovery of buildable targets in a directory";
+
+let show_checked =
+  Param.flag
+    "show-checked" aliases::["nr"] Spec.no_arg doc::" Show actions which are checked, but not run";
+
+let show_considering =
+  Param.flag
+    "show-considering"
+    aliases::["con"]
+    Spec.no_arg
+    doc::" Mainly for debug. Shows when deps are considered/re-considered (rather verbose)";
+
+let show_error_dependency_paths =
+  Param.flag
+    "show-error-dependency-paths"
+    Spec.no_arg
+    doc::" show dependency paths from root goal to each error (like exception stack traces)";
+
+let show_memory_allocations =
+  Param.flag
+    "show-memory-allocations"
+    Spec.no_arg
+    doc::" Show information about memory allocation at the end of the build";
+
+let show_reconsidering =
+  Param.flag
+    "show-reconsidering"
+    aliases::["recon"]
+    Spec.no_arg
+    doc::" Mainly for debug. Show when deps are re-considered";
+
+let show_reflecting =
+  Param.flag
+    "show-reflecting"
+    aliases::["reflect"]
+    Spec.no_arg
+    doc::" Mainly for debug. Shows when deps are being reflected";
+
+let show_trace_messages =
+  Param.flag "trace" Spec.no_arg doc::" switch on some additional trace messages";
+
+let prefix_time = Param.flag "time" Spec.no_arg doc::" prefix all messages with the time";
+
+let report_long_cycle_times =
+  Param.flag
+    "report-long-cycle-times"
+    aliases::["long"]
+    (Spec.optional Spec.int)
+    doc::"<ms> (for development) pass to Scheduler.report_long_cycle_times";
+
+let omake_server =
+  Param.flag
+    "w"
+    aliases::["-omake-server"]
+    Spec.no_arg
+    doc::" Omake compatability; declare omake-server is caller";
+
+let output_postpone =
+  Param.flag "--output-postpone" Spec.no_arg doc::" Omake compatability; ignored";
+
+let progress =
+  Param.flag
+    "progress"
+    aliases::["--progress"]
+    Spec.no_arg
+    doc::" Show periodic progress report (omake style)";
+
+let path_to_jenga_conf =
+  Param.flag
+    "-path-to-jenga-conf"
+    (Spec.optional Spec.string)
+    doc::(sprintf " Specify path to <jenga.conf>; The repo_root is taken to be CWD.");
+
+let brief_error_summary =
+  Param.flag
+    "brief-error-summary"
+    Spec.no_arg
+    doc::" Don't repeat stdout/stderr from failing commands in error summary";
+
+let no_server =
+  Param.flag
+    "no-server" Spec.no_arg doc::" Don't start jenga server (queries to the server won't work)";
+
+let minor_heap_size = {
+  let default = 50;
+  Param.flag
+    "minor-heap-size"
+    (Spec.optional_with_default default Spec.int)
+    doc::(sprintf "<Mb> (default = %d Mb)" default)
 };
 
-/* Figure out the order in which third-party libs should be compiled, based on their dependencies (the
-   depended is compiled before the dependent). */
-let sortedTransitiveThirdPartyNpmLibsIncludingSelf's = {
-  let thirdPartyLibs = getThirdPartyNpmLibs libDir::root;
-  let thirdPartyDeps =
-    List.map
-      thirdPartyLibs
-      f::(
-        fun name => {
-          /* third party's own third party libs */
-          let libDir = rel dir::nodeModulesRoot (tsl name);
-          (name, getThirdPartyNpmLibs libDir::libDir)
-        }
-      );
-  /* `topologicalSort` will also return our own deps. */
-  topologicalSort thirdPartyDeps
+let major_heap_increment = {
+  let default = 200;
+  Param.flag
+    "major-heap-increment"
+    (Spec.optional_with_default default Spec.int)
+    doc::(sprintf "<Mb> (default = %d Mb)" default)
 };
 
-let transitiveThirdPartyOcamlfindLibsIncludingSelf's = {
-  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::root;
-  let thirdPartyOcamlfindLibs = getThirdPartyOcamlfindLibs libDir::root;
-  let thirdPartyLibDirs =
-    List.map thirdPartyNpmLibs f::(fun name => rel dir::nodeModulesRoot (tsl name));
-  /* each third party's own third party libs */
-  let thirdPartiesThirdPartyOcamlfindLibNamesD =
-    List.map thirdPartyLibDirs f::(fun libDir => getThirdPartyOcamlfindLibs libDir::libDir);
-  thirdPartyOcamlfindLibs @ List.concat thirdPartiesThirdPartyOcamlfindLibNamesD |> List.dedup
+let space_overhead = {
+  let default = 100;
+  Param.flag
+    "space-overhead"
+    (Spec.optional_with_default default Spec.int)
+    doc::(sprintf "<percent> (default = %d)" default)
 };
 
-/* Used to compile a library file. The compile command requires files to be passed in order. If A requires B
-   but B is passed after A in the command, the compilation will fail with e.g. "module B not found" when
-   compiling A */
-let sortPathsTopologically paths::paths => {
-  let pathsAsModulesOriginalCapitalization =
-    List.map paths f::(fun path => (pathToModule path, path));
-  let pathsAsModules = List.map pathsAsModulesOriginalCapitalization f::fst;
-  let moduleDepsForPathsD = Dep.all (
-    List.map paths f::(fun path => ocamlDepCurrentSources sourcePath::path)
-  );
-  mapD
-    moduleDepsForPathsD
-    (
-      fun moduleDepsForPaths =>
-        List.zip_exn pathsAsModules moduleDepsForPaths |> topologicalSort |>
-        List.map f::(fun m => List.Assoc.find_exn pathsAsModulesOriginalCapitalization m)
-    )
+let no_notifiers =
+  Param.flag
+    "no-notifiers"
+    aliases::["nono"]
+    Spec.no_arg
+    doc::" Disable filesystem notifiers (inotify); polling wont work";
+
+let no_fs_triggers =
+  Param.flag
+    "no-fs-triggers"
+    Spec.no_arg
+    doc::" For testing, only valid without notifiers. Makes jenga more strict by failing instead of potentially recovering when the file system changes.";
+
+let buildable_targets_fixpoint_max = {
+  let default = 5;
+  Param.flag
+    "buildable-targets-fixpoint-max"
+    (Spec.optional_with_default default Spec.int)
+    doc::(sprintf "<iters> (default = %d); 0 means no limit" default)
 };
 
-/* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
-   into a foo.ml file whose content is:
-   module A = Foo__A;
-   module B = Foo__B;
+let sandbox_actions =
+  Param.flag
+    "-sandbox-actions"
+    Spec.no_arg
+    doc::" Check dependencies are right by running actions in a part of the filesystem where only the declared dependencies are available";
 
-   We'll then compile this file into foo.cmi/cmo/cmt, and have it opened by default when compiling A.re and
-   B.re (into foo_A and foo_B respectively) later. The effect is that, inside A.re, we can refer to B instead
-   of Foo__B thanks to the pre-opened foo.ml. But when these files are used by other libraries (which aren't
-   compiled with foo.re pre-opened of course), they won't see module A or B, only Foo__A and Foo__B, aka in
-   practice, they simply won't see them. This effectively means we've implemented namespacing!
+let deprecated_camlp4 =
+  Param.flag
+    "-camlp4"
+    Spec.no_arg
+    doc::" Preprocess files listed in jenga.conf using camlp4 instead of ppx (deprecated)";
 
-   Note that we're generating a ml file rather than re, because this rebel theoretically works on pure
-   ocaml projects too, with no dep on reason. */
-let moduleAliasFileScheme
-    buildDir::buildDir
-    sourceNotInterfacePaths::sourceNotInterfacePaths
-    libName::libName => {
-  let name extension => rel dir::buildDir (tsm (libToModule libName) ^ "." ^ extension);
-  let sourcePath = name "ml";
-  let cmo = name "cmo";
-  let cmi = name "cmi";
-  let cmt = name "cmt";
-  let fileContent =
-    List.map
-      sourceNotInterfacePaths
-      f::(
-        fun path =>
-          Printf.sprintf
-            "module %s = %s\n"
-            (tsm (pathToModule path))
-            (namespacedName libName::libName path::path)
-      ) |>
-    String.concat sep::"";
-  let action =
-    bashf
-      /* We suppress a few warnings here through -w.
-         - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
-         can't be found at the moment this module alias file is compiled. This is normal, since the
-         module alias file is the first thing that's compiled (so that we can open it during
-         compilation of A.re and B.re into Foo__A and Foo__B). Think of this as forward declaration.
+let anon_demands = Spec.anon (Spec.sequence ("DEMAND" %: Spec.string));
 
-         - 30: Two labels or constructors of the same name are defined in two mutually recursive
-         types. I forgot...
-
-         - 40: Constructor or label name used out of scope. I forgot too. Great comment huh?
-
-         More flags:
-         -pp refmt option makes ocamlc take our reason syntax source code and pass it through our
-         refmt parser first, before operating on the AST.
-
-         -bin-annot: generates cmt files that contains info such as types and bindings, for use with
-         Merlin.
-
-         -g: add debugging info. You don't really ever compile without this flag.
-
-         -impl: source file. This flag's needed if the source extension isn't ml. I think.
-
-         -o: output name
-         */
-      "ocamlc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
-      (ts sourcePath)
-      (ts cmo);
-  /* TODO: do we even need the cmo file here? */
-  let compileRule =
-    Rule.create targets::[cmo, cmi, cmt] (mapD (Dep.path sourcePath) (fun () => action));
-  let contentRule =
-    Rule.create targets::[sourcePath] (Dep.return (Action.save fileContent target::sourcePath));
-  Scheme.rules [contentRule, compileRule]
-};
-
-/* We compile each file in the current library (say, foo). If a file's Bar.re, it'll be compiled to
-   foo__Bar.{cmi, cmo, cmt}. As to why we're namespacing compiled outputs like this, see
-   `moduleAliasFileScheme`. */
-let compileSourcesScheme
-    libDir::libDir
-    buildDir::buildDir
-    libName::libName
-    sourcePaths::sourcePaths => {
-  /* This is the module alias file generated through `moduleAliasFileScheme`, that we said we're gonna `-open`
-     during `ocamlc` */
-  let moduleAliasDep extension => relD dir::buildDir (tsm (libToModule libName) ^ "." ^ extension);
-  let compileEachSourcePath path =>
-    mapD
-      (
-        Dep.both
-          (ocamlDepCurrentSources sourcePath::path)
-          (
-            Dep.return (
-              getThirdPartyNpmLibs libDir::libDir,
-              getThirdPartyOcamlfindLibs libDir::libDir
-            )
-          )
-      )
-      (
-        fun (firstPartyDeps, (thirdPartyNpmLibs, thirdPartyOcamlfindLibNames)) => {
-          let isInterface' = isInterface path;
-          let hasInterface =
-            not isInterface' &&
-            List.exists
-              sourcePaths
-              f::(
-                fun path' =>
-                  isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path
-              );
-          /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
-             to recompile the dependent modules. Win. */
-          let firstPartyCmisDeps =
-            List.filter
-              sourcePaths
-              f::(
-                fun path => {
-                  let pathAsModule = pathToModule path;
-                  List.exists firstPartyDeps f::(fun m => m == pathAsModule)
-                }
-              ) |>
-            List.map
-              f::(
-                fun path =>
-                  relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi")
-              );
-          let firstPartyCmisDeps =
-            if (not isInterface' && hasInterface) {
-              [
-                /* We're a source file with an interface; include our own cmi as a dependency (our interface
-                   file should be compile before ourselves). */
-                relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi"),
-                ...firstPartyCmisDeps
-              ]
-            } else {
-              firstPartyCmisDeps
-            };
-          let namespacedName' = namespacedName libName::libName path::path;
-          /* Compiling the current source file depends on all of the cmis of all its third-party libraries'
-             source files being compiled. This is very coarse since in reality, we only depend on a few source
-             files of these third-party libs. But ocamldep isn't granular enough to give us this information
-             yet. */
-          let thirdPartiesCmisDep = Dep.all_unit (
-            List.map
-              thirdPartyNpmLibs
-              f::(
-                fun libName =>
-                  /* if one of a third party library foo's source is Hi.re, then it resides in
-                     `node_modules/foo/src/Hi.re`, and its cmi artifacts in `_build/foo/Foo__Hi.cmi` */
-                  bindD
-                    (
-                      Dep.glob_listing (
-                        Glob.create
-                          /* No need to glob `.rei/.mli`s here. We're only getting the file names to
-                             construct cmi paths. */
-                          dir::(rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src")
-                          "*.{re,ml}"
-                      )
-                    )
-                    (
-                      fun thirdPartySources => Dep.all_unit (
-                        List.map
-                          thirdPartySources
-                          f::(
-                            fun sourcePath =>
-                              relD
-                                dir::(rel dir::buildDirRoot (tsl libName))
-                                (namespacedName libName::libName path::sourcePath ^ ".cmi")
-                          )
-                      )
-                    )
-              )
-          );
-          let cmi = rel dir::buildDir (namespacedName' ^ ".cmi");
-          let cmo = rel dir::buildDir (namespacedName' ^ ".cmo");
-          let cmt = rel dir::buildDir (namespacedName' ^ ".cmt");
-          let deps = Dep.all_unit [
-            Dep.path path,
-            moduleAliasDep "cmi",
-            moduleAliasDep "cmo",
-            moduleAliasDep "cmt",
-            moduleAliasDep "ml",
-            thirdPartiesCmisDep,
-            ...firstPartyCmisDeps
-          ];
-          let targets =
-            if isInterface' {
-              [cmi]
-            } else if hasInterface {
-              [cmo, cmt]
-            } else {
-              [/* Source file without corresponding interface file beside it. */ cmi, cmo, cmt]
-            };
-          let ocamlfindPackagesStr =
-            if (thirdPartyOcamlfindLibNames == []) {
-              ""
-            } else {
-              "-package " ^ (
-                thirdPartyOcamlfindLibNames |> List.map f::tsl |> String.concat sep::","
-              )
-            };
-          let action =
-            bashf
-              /* Most of the flags here have been explained previously in `moduleAliasFileScheme`.
-                 -intf-suffix: tells ocamlc what the interface file's extension is.
-
-                 -c: compile only, don't link yet.
-                 */
-              /* Example command: ocamlc -pp refmt -bin-annot -g -w -30 -w -40 -open Foo -I \
-                 path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma -I ./ -I ../fooDependsOnMe -I \
-                 ../fooDependsOnMeToo -o foo__CurrentSourcePath -intf-suffix .rei -c -impl \
-                 path/to/CurrentSourcePath.re */
-              (
-                if isInterface' {
-                  "ocamlfind ocamlc %s -pp refmt -g -w -30 -w -40 -open %s -I %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
-                } else if (
-                  String.is_suffix (Path.basename path) suffix::".re"
-                ) {
-                  "ocamlfind ocamlc %s -pp refmt -bin-annot -g -w -30 -w -40 -open %s -I %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
-                } else {
-                  "ocamlfind ocamlc %s -pp refmt -bin-annot -g -w -30 -w -40 -open %s -I %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
-                }
-              )
-              ocamlfindPackagesStr
-              (tsm (libToModule libName))
-              (ts buildDir)
-              (
-                List.map
-                  thirdPartyNpmLibs f::(fun (Lib name) => "-I " ^ ts (rel dir::buildDirRoot name)) |>
-                String.concat sep::" "
-              )
-              (ts (rel dir::buildDir namespacedName'))
-              (ts path);
-          Rule.create targets::targets (mapD deps (fun () => action))
-        }
-      );
-  Scheme.rules_dep (Dep.all (List.map sourcePaths f::compileEachSourcePath))
-};
-
-/* This function assumes we're not using it at the top level.
-   Cma is a library file for the current library which bundles up all the lib's first-party compiled sources.
-   This way, it's much easier, at the end, at the top level, to include each library's cma file to compile the
-   final executable, than to tediously pass every single source file from every lib in order.
-
-   There's a caveat though. We said we're only bundling up the current lib's first-party code; We _could_ have
-   bundled up its third-party deps' cma too, but then we might get into duplicate artifact problem caused by
-   e.g. library A and B both requiring and bundling C. So we can only bundle first-party code, and then, at
-   the top, take all the transitive dependencies (libraries) cmas, figure out their relative order, and pass
-   them in that order to the ocamlc command (this logic is in `finalOutputsScheme` below). Still tedious, but
-   at least we're not passing individual source files in order. */
-let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName buildDir::buildDir => {
-  let moduleName = tsm (libToModule libName);
-  let cmaPath = rel dir::buildDir libraryFileName;
-  let moduleAliasCmoPath = rel dir::buildDir (moduleName ^ ".cmo");
-  let cmos =
-    List.map
-      /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
-      sortedSourcePaths
-      f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ ".cmo"));
-  let cmosString = List.map cmos f::ts |> String.concat sep::" ";
-  /* Final bundling. Time to get all the transitive dependencies... */
-  Scheme.rules [
-    Rule.simple
-      targets::[cmaPath]
-      deps::(List.map [moduleAliasCmoPath, ...cmos] f::Dep.path)
-      action::(
-        bashf
-          /* Flags:
-             -open: compile the file as if [file being opened] was opened at the top of the file. In
-             our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
-             function for more comment.
-
-             -a: flag for building a library.
-
-             -o: output file name.
-             */
-          /* Example command: ocamlc -g -open Foo -a -o lib.cma foo.cmo aDependsOnMe.cmo a.cmo b.cmo */
-          "ocamlc -g -open %s -a -o %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
-          moduleName
-          (ts cmaPath)
-          (ts moduleAliasCmoPath)
-          cmosString
-      )
-  ]
-};
-
-/* This function assumes we're using it only at the top level.
-   We'll output an executable, plus a js_of_ocaml JavaScript file. Throughout the compilation of the source
-   files, we've already mingled in the correctly jsoo search paths in ocamlc to make this final compilation
-   work. */
-let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
-  let buildDir = rel dir::buildDirRoot (tsl topLibName);
-  let moduleAliasCmoPath = rel dir::buildDir (tsm (libToModule topLibName) ^ ".cmo");
-  let cmos =
-    List.map
-      /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
-      sortedSourcePaths
-      f::(fun path => rel dir::buildDir (namespacedName libName::topLibName path::path ^ ".cmo"));
-  let cmosString = List.map cmos f::ts |> String.concat sep::" ";
-  let transitiveCmaPaths =
-    List.map
-      sortedTransitiveThirdPartyNpmLibsIncludingSelf's
-      f::(fun (Lib name) => rel dir::(rel dir::buildDirRoot name) libraryFileName);
-  let ocamlfindPackagesStr =
-    if (transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
-      ""
+let create_config
+    j_number::j_number
+    f_number::f_number
+    d_number::d_number
+    poll_forever::poll_forever
+    stop_on_first_error::stop_on_first_error
+    verbose::verbose
+    show_actions_run::show_actions_run
+    show_actions_run_verbose::show_actions_run_verbose
+    show_buildable_discovery::show_buildable_discovery
+    show_checked::show_checked
+    show_considering::show_considering
+    show_error_dependency_paths::show_error_dependency_paths
+    show_memory_allocations::show_memory_allocations
+    show_reconsidering::show_reconsidering
+    show_reflecting::show_reflecting
+    show_trace_messages::show_trace_messages
+    prefix_time::prefix_time
+    report_long_cycle_times::report_long_cycle_times
+    omake_server::omake_server
+    output_postpone::_
+    progress::progress
+    path_to_jenga_conf::path_to_jenga_conf
+    brief_error_summary::brief_error_summary
+    no_server::no_server
+    minor_heap_size::minor_heap_size
+    major_heap_increment::major_heap_increment
+    space_overhead::space_overhead
+    no_notifiers::no_notifiers
+    no_fs_triggers::no_fs_triggers
+    buildable_targets_fixpoint_max::buildable_targets_fixpoint_max
+    sandbox_actions::sandbox_actions
+    deprecated_camlp4::deprecated_camlp4
+    anon_demands::anon_demands => {
+  Config.j_number: j_number,
+  f_number,
+  d_number,
+  poll_forever,
+  stop_on_first_error,
+  verbose,
+  show_memory_allocations,
+  show_actions_run: show_actions_run || show_actions_run_verbose,
+  show_actions_run_verbose,
+  show_checked,
+  show_considering,
+  show_buildable_discovery,
+  show_reflecting,
+  show_reconsidering,
+  show_trace_messages,
+  show_error_dependency_paths,
+  prefix_time,
+  report_long_cycle_times:
+    Option.map report_long_cycle_times f::(fun ms => Time.Span.create ms::ms ()),
+  progress:
+    if progress {
+      if omake_server {
+        Some `omake_style
+      } else {
+        Some `jem_style
+      }
     } else {
-      "-linkpkg -package " ^ (
-        List.map transitiveThirdPartyOcamlfindLibsIncludingSelf's f::tsl |> String.concat sep::","
-      )
-    };
-  let action =
-    bashf
-      /* For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
-         the module invokes some jsoo's Js module-related stuff. */
-      /* Example command: ocamlc -g -I path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma \
-         -open Top -o app.out  ../barDependsOnMe/lib.cma ../bar/lib.cma ../baz/lib.cma \
-         top.cmo aDependsOnMe.cmo a.cmo moreFirstPartyCmo.cmo */
-      /* Flags:
-         -I: search path(s), when ocamlc looks for modules referenced inside the file.
-
-         -open: compile the file as if [file being opened] was opened at the top of the file. In
-         our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
-         function for more comment.
-
-         -o: output file name.
-         */
-      "ocamlfind ocamlc %s -g -open %s -o %s %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
-      ocamlfindPackagesStr
-      (tsm (libToModule topLibName))
-      (ts binaryOutput)
-      (transitiveCmaPaths |> List.map f::ts |> String.concat sep::" ")
-      (ts moduleAliasCmoPath)
-      cmosString;
-  Scheme.rules [
-    Rule.simple
-      targets::[binaryOutput]
-      deps::(
-        /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-        [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
-      )
-      action::action,
-    Rule.simple
-      targets::[jsOutput]
-      deps::[Dep.path binaryOutput]
-      action::(
-        bashf
-          /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
-             output is still butt ugly. Just kidding I love you guys. */
-          "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
-          (ts jsOutput)
-          (ts binaryOutput)
-      )
-  ]
+      None
+    },
+  dont_emit_kill_line: String.(terminal_type == "dumb"),
+  path_to_jenga_conf,
+  brief_error_summary,
+  no_server,
+  no_notifiers,
+  no_fs_triggers,
+  buildable_targets_fixpoint_max,
+  sandbox_actions,
+  deprecated_camlp4,
+  demands: anon_demands,
+  gc: {Config.Gc.minor_heap_size: minor_heap_size, major_heap_increment, space_overhead}
 };
 
-/* The function that ties together all the previous steps and compiles a given library, whether it be our top
-   level library or a third-party one. */
-let compileLibScheme
-    isTopLevelLib::isTopLevelLib=true
-    srcDir::srcDir
-    libName::libName
-    buildDir::buildDir => Scheme.dep (
-  bindD
-    (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}"))
-    (
-      fun unsortedPaths => {
-        let sourceNotInterfacePaths =
-          List.filter unsortedPaths f::(fun path => not (isInterface path));
-        mapD
-          (sortPathsTopologically paths::unsortedPaths)
-          (
-            fun sortedPaths => Scheme.all [
-              moduleAliasFileScheme
-                buildDir::buildDir
-                libName::libName
-                sourceNotInterfacePaths::sourceNotInterfacePaths,
-              compileSourcesScheme
-                libDir::(Path.dirname srcDir)
-                buildDir::buildDir
-                libName::libName
-                sourcePaths::unsortedPaths,
-              isTopLevelLib ?
-                /* if we're at the final, top level compilation, there's no need to build a cma output (and
-                   then generate an executable from it). We can cut straight to generating the executable. See
-                   `finalOutputsScheme`. */
-                finalOutputsScheme sortedSourcePaths::sortedPaths :
-                compileCmaScheme buildDir::buildDir libName::libName sortedSourcePaths::sortedPaths
-            ]
-          )
+open Command.Let_syntax;
+
+let config_param: Command.Param.t Config.t =
+  Command.Let_syntax.(
+    [%map_open
+      {
+        let j_number = j_number
+        and f_number = f_number
+        and d_number = d_number
+        and poll_forever = poll_forever
+        and stop_on_first_error = stop_on_first_error
+        and verbose = verbose
+        and show_actions_run = show_actions_run
+        and show_actions_run_verbose = show_actions_run_verbose
+        and show_buildable_discovery = show_buildable_discovery
+        and show_checked = show_checked
+        and show_considering = show_considering
+        and show_error_dependency_paths = show_error_dependency_paths
+        and show_memory_allocations = show_memory_allocations
+        and show_reconsidering = show_reconsidering
+        and show_reflecting = show_reflecting
+        and show_trace_messages = show_trace_messages
+        and prefix_time = prefix_time
+        and report_long_cycle_times = report_long_cycle_times
+        and omake_server = omake_server
+        and output_postpone: _ = output_postpone
+        and progress = progress
+        and path_to_jenga_conf = path_to_jenga_conf
+        and brief_error_summary = brief_error_summary
+        and no_server = no_server
+        and minor_heap_size = minor_heap_size
+        and major_heap_increment = major_heap_increment
+        and space_overhead = space_overhead
+        and no_notifiers = no_notifiers
+        and no_fs_triggers = no_fs_triggers
+        and buildable_targets_fixpoint_max = buildable_targets_fixpoint_max
+        and sandbox_actions = sandbox_actions
+        and deprecated_camlp4 = deprecated_camlp4
+        and anon_demands = anon_demands;
+        create_config
+          j_number::j_number
+          f_number::f_number
+          d_number::d_number
+          poll_forever::poll_forever
+          stop_on_first_error::stop_on_first_error
+          verbose::verbose
+          show_actions_run::show_actions_run
+          show_actions_run_verbose::show_actions_run_verbose
+          show_buildable_discovery::show_buildable_discovery
+          show_checked::show_checked
+          show_considering::show_considering
+          show_error_dependency_paths::show_error_dependency_paths
+          show_memory_allocations::show_memory_allocations
+          show_reconsidering::show_reconsidering
+          show_reflecting::show_reflecting
+          show_trace_messages::show_trace_messages
+          prefix_time::prefix_time
+          report_long_cycle_times::report_long_cycle_times
+          omake_server::omake_server
+          output_postpone::output_postpone
+          progress::progress
+          path_to_jenga_conf::path_to_jenga_conf
+          brief_error_summary::brief_error_summary
+          no_server::no_server
+          minor_heap_size::minor_heap_size
+          major_heap_increment::major_heap_increment
+          space_overhead::space_overhead
+          no_notifiers::no_notifiers
+          no_fs_triggers::no_fs_triggers
+          buildable_targets_fixpoint_max::buildable_targets_fixpoint_max
+          sandbox_actions::sandbox_actions
+          deprecated_camlp4::deprecated_camlp4
+          anon_demands::anon_demands
+      }
+    ]
+  );
+
+let buildCommand toplevel::toplevel run::run () =>
+  Command.basic'
+    summary::("build specified targets" ^ (if toplevel {""} else {" (default subcommand)"}))
+    readme::(
+      fun () => {
+        let rest =
+          if toplevel {
+            ["To see other jenga commands, try jenga help."]
+          } else {
+            []
+          };
+        String.concat sep::"\n" ["By default building the .DEFAULT target.", ...rest]
       }
     )
-);
+    (Command.Param.map config_param f::(fun config () => run config));
 
-/* See comment in the `sprintf` */
-let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir => {
-  let dotMerlinPath = rel dir::dir ".merlin";
-  let saveMerlinAction thirdPartyOcamlfindLibNames => {
-    let dotMerlinContent =
-      Printf.sprintf
-        {|# This file is autogenerated for
-# [Merlin](https://github.com/the-lambda-church/merlin), a static analyser for
-# OCaml that provides autocompletion, jump-to-location, recoverable syntax
-# errors, type errors detection, etc., that your editor can use. To activate it,
-# one usually provides a .merlin file at the root of a project, describing where
-# the sources and artifacts are. Since we dictated the project structure, we can
-# auto generate .merlin files!
-
-# S is the merlin flag for source files
-%s
-
-# Include all the third-party sources too. You might notice that we've put a
-# .merlin into each node_modules package. This is subtle; in short, it's to make
-# jump-to-location work correctly in conjunction with our build & namespacing
-# setup, when you jump into a third-party file.
-S %s
-
-# B stands for build (artifacts). We generate ours into _build
-B %s
-
-# PKG lists packages found through ocamlfind (aka findlib), a tool for finding
-# the location of third-party dependencies. For us, most of our third-party deps
-# reside in `node_modules/` (made visible to Merlin through the S command
-# above); this PKG command is for discovering the opam/ocamlfind packages.
-PKG %s
-
-# FLG is the set of flags to pass to Merlin, as if it used ocamlc to compile and
-# understand our sources. You don't have to understand what these flags are for
-# now; but if you're curious, go check the rebel.ml that generated this
-# .merlin at https://github.com/reasonml/rebel
-FLG -w -30 -w -40 -open %s
-|}
-        (isTopLevelLib ? "S src" : "")
-        (Path.reach_from dir::dir (rel dir::nodeModulesRoot "**/src"))
-        (Path.reach_from dir::dir (rel dir::buildDirRoot "*"))
-        (thirdPartyOcamlfindLibNames |> List.map f::tsl |> String.concat sep::" ")
-        (tsm (libToModule libName));
-    Action.save dotMerlinContent target::dotMerlinPath
-  };
-  Scheme.rules [
-    Rule.create
-      targets::[dotMerlinPath]
-      (mapD (Dep.return (getThirdPartyOcamlfindLibs libDir::dir)) saveMerlinAction)
-  ]
-};
-
-let scheme dir::dir => {
-  ignore dir;
-  /* We generate many .merlin files, one per third-party library (and on at the top). Additionally, this is
-     the only case where we generate some artifacts outside of _build/. Most of this is so that Merlin's
-     jump-to-location could work correctly when we jump into a third-party source file. As to why exactly we
-     generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
-  if (dir == root) {
-    let packageJsonPath = rel dir::root "package.json";
-    let dotMerlinDefaultScheme = Scheme.rules_dep (
-      mapD
-        (Dep.return (getThirdPartyNpmLibs libDir::root))
-        (
-          fun libs => {
-            let thirdPartyRoots =
-              List.map libs f::(fun (Lib name) => rel dir::nodeModulesRoot name);
-            List.map
-              thirdPartyRoots f::(fun path => Rule.default dir::root [relD dir::path ".merlin"])
-          }
+let main argv::argv=(Array.to_list Sys.argv) run::run () => {
+  let toplevel_group = [
+    ("build", buildCommand toplevel::false run::run ())
+  ];
+  let toplevel_group_names = ["help", "version", ...List.map toplevel_group f::fst];
+  switch argv {
+  | [_, s, ..._] when List.mem toplevel_group_names s =>
+    Command.run (Command.group summary::"Build system for Reason" toplevel_group) argv::argv
+  | _ =>
+    /* When completing the first argument we would like to ask for the completion of
+       both the group names and the flags/arguments of the command below. Unfortunately,
+       Command wants to exit instead of returning even when completing. So we create the
+       completion ourselves, which is easy enough, even though it's a bit ugly. */
+    switch argv {
+    | [_, s, ..._] when Sys.getenv "COMP_CWORD" == Some "1" =>
+      List.iter
+        toplevel_group_names
+        f::(
+          fun group_name =>
+            if (String.is_prefix prefix::s group_name) {
+              print_endline group_name
+            }
         )
-    );
-    Scheme.all [
-      dotMerlinScheme isTopLevelLib::true dir::root libName::topLibName,
-      Scheme.rules [
-        Rule.default dir::dir [Dep.path binaryOutput, Dep.path jsOutput, relD dir::root ".merlin"]
-      ],
-      Scheme.exclude (fun path => path == packageJsonPath) dotMerlinDefaultScheme
-    ]
-  } else if (
-    Path.is_descendant dir::buildDirRoot dir
-  ) {
-    let libName = Lib (Path.basename dir);
-    let srcDir =
-      libName == topLibName ? topSrcDir : rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
-    compileLibScheme
-      srcDir::srcDir
-      isTopLevelLib::(libName == topLibName)
-      libName::libName
-      buildDir::(rel dir::buildDirRoot (tsl libName))
-  } else if (
-    Path.dirname dir == nodeModulesRoot
-  ) {
-    let libName = Lib (Path.basename dir);
-    dotMerlinScheme isTopLevelLib::false dir::dir libName::libName
-  } else {
-    Scheme.no_rules
+    | _ => ()
+    };
+    Command.run (buildCommand toplevel::true run::run ()) argv::argv
   }
 };
 
-let env () => Env.create
-  /* TODO: this doesn't traverse down to _build so I can't ask it to clean files there? */
-  /* artifacts::(
-       fun dir::dir => {
-         print_endline @@ (ts dir ^ "00000000000000000");
-         /* if (dir == buildDir || Path.is_descendant dir::dir buildDir) {
-           Dep.glob_listing (Glob.create dir::buildDir "*.cmi")
-         } else { */
-           Dep.return []
-         /* } */
-       }
-     ) */
-  scheme;
-/* let setup () => Deferred.return env; */
+let module Rel = Path.Rel;
+
+let find_ancestor_directory_containing one_of::one_of => {
+  if (List.is_empty one_of) {
+    invalid_arg "find_ancestor_directory_containing"
+  };
+  let exists_in dir::dir => {
+    let exists path =>
+      switch (Core.Std.Sys.file_exists (dir ^\/ Rel.to_string path)) {
+      | `No
+      | `Unknown => false
+      | `Yes => true
+      };
+    List.exists one_of f::exists
+  };
+  let start_dir = Core.Std.Sys.getcwd ();
+  let rec loop dir =>
+    if (exists_in dir::dir) {
+      Ok (Path.Abs.create dir)
+    } else if (String.equal dir Filename.root) {
+      Or_error.errorf
+        "Can't find %s in start-dir or any ancestor dir"
+        (
+          switch (List.rev one_of) {
+          | [] => assert false
+          | [x] => "Path.Rel Fails"
+          | [x, ...l] => "Path.Rel Fails A lot"
+          }
+        )
+    } else {
+      loop (Filename.dirname dir)
+    };
+  loop start_dir
+};
+
+/*
+  =====================================================
+    COPIED CODE END
+  =====================================================
+ */
+
+open Jenga_lib.Build.Jr_spec;
+
+let root_markers = [".git", ".hg"] |> List.map f::Path.Rel.create;
+
+/* let setup () => Env.create (fun dir::dir => Scheme.no_rules); */
+
+let () =
+  main
+    ()
+    run::(
+      fun config => {
+        let root_dir = find_ancestor_directory_containing one_of::root_markers |> ok_exn;
+        Run.main' root_dir::root_dir (Env Rules.env) config
+      }
+    );
