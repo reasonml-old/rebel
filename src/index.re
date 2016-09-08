@@ -1,3 +1,8 @@
+/*
+ * vim: set ft=rust:
+ * vim: set ft=reason:
+ */
+
 open Core.Std;
 open Yojson.Basic;
 open Jenga_lib;

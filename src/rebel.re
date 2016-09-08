@@ -144,67 +144,35 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
 
 let isDirRebelCampatible libDir::libDir => {
   let packageJsonPath = rel dir::libDir "package.json";
-
-  mapD
-    (
-      Dep.path packageJsonPath
-    )
-    (fun s => ([from_file (ts packageJsonPath)] |> Util.filter_member "rebel" |> List.length) != 0)
+  [from_file (ts packageJsonPath)] |> Util.filter_member "rebel" |> List.length != 0
 };
 
-let withRebelCompatibleLibs libs =>
-  mapD
-    (
-      List.map
-        libs
-        f::(
-          fun lib =>
-            Dep.both
-              (isDirRebelCampatible libDir::(rel dir::nodeModulesRoot (tsl lib))) (Dep.return lib)
-        ) |> Dep.all
-    )
-    (fun list => List.filter f::(fun (a, _) => a) list |> List.map f::(fun (_, b) => b));
+let withRebelCompatibleLibs =
+  List.filter f::(fun lib => isDirRebelCampatible libDir::(rel dir::nodeModulesRoot (tsl lib)));
 
 /* Simply read into the package.json "dependencies" field. */
 let getThirdPartyNpmLibs libDir::libDir => {
   let packageJsonPath = rel dir::libDir "package.json";
   let deps =
-    mapD
-      (
-        Dep.path packageJsonPath
-      )
-      (
-        fun content => {
-          let deps = [from_file (ts packageJsonPath)] |> Util.filter_member "dependencies" |> Util.filter_assoc;
-
-          switch deps {
-            | [x] => x |> List.map f::fst |> List.map f::(fun name => Lib name)
-            | _ => []
-          }
-        }
-      );
-  bindD deps withRebelCompatibleLibs
+    [from_file (ts packageJsonPath)] |> Util.filter_member "dependencies" |> Util.filter_assoc;
+  let libs =
+    switch deps {
+    | [x] => x |> List.map f::fst |> List.map f::(fun name => Lib name)
+    | _ => []
+    };
+  withRebelCompatibleLibs libs
 };
 
 /* Simply read into the package.json "rebel.ocamlfindDependencies" field. */
 let getThirdPartyOcamlfindLibs libDir::libDir => {
   let packageJsonPath = rel dir::libDir "package.json";
-  mapD
-    (
-      Dep.path packageJsonPath
-    )
-    (
-      fun content => {
-        let deps =
-          from_file (ts packageJsonPath) |>
-            Util.member "rebel" |> Util.to_option (fun a => a |> Util.member "ocamlfindDependencies");
-
-        switch deps {
-        | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Lib name)
-        | _ => []
-        };
-      }
-    )
+  let deps =
+    from_file (ts packageJsonPath) |> Util.member "rebel" |>
+    Util.to_option (fun a => a |> Util.member "ocamlfindDependencies");
+  switch deps {
+  | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Lib name)
+  | _ => []
+  }
 };
 
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
@@ -235,46 +203,32 @@ let topologicalSort graph => {
 
 /* Figure out the order in which third-party libs should be compiled, based on their dependencies (the
    depended is compiled before the dependent). */
-let sortedTransitiveThirdPartyNpmLibsIncludingSelf's =
-  bindD
-    (getThirdPartyNpmLibs libDir::root)
-    (
-      fun thirdPartyLibs => {
-        let thirdPartyLibDirs =
-          List.map thirdPartyLibs f::(fun name => rel dir::nodeModulesRoot (tsl name));
-        /* each third party's own third party libs */
-        let thirdPartiesThirdPartyLibNamesD = Dep.all (
-          List.map thirdPartyLibDirs f::(fun libDir => getThirdPartyNpmLibs libDir::libDir)
-        );
-        mapD
-          thirdPartiesThirdPartyLibNamesD
-          (
-            fun thirdPartiesThirdPartyLibNames =>
-              /* `topologicalSort` will also return our own deps. */
-              List.zip_exn thirdPartyLibs thirdPartiesThirdPartyLibNames |> topologicalSort
-          )
-      }
-    );
+let sortedTransitiveThirdPartyNpmLibsIncludingSelf's = {
+  let thirdPartyLibs = getThirdPartyNpmLibs libDir::root;
+  let thirdPartyDeps =
+    List.map
+      thirdPartyLibs
+      f::(
+        fun name => {
+          /* third party's own third party libs */
+          let libDir = rel dir::nodeModulesRoot (tsl name);
+          (name, getThirdPartyNpmLibs libDir::libDir)
+        }
+      );
+  /* `topologicalSort` will also return our own deps. */
+  topologicalSort thirdPartyDeps
+};
 
-let transitiveThirdPartyOcamlfindLibsIncludingSelf's =
-  bindD
-    (Dep.both (getThirdPartyNpmLibs libDir::root) (getThirdPartyOcamlfindLibs libDir::root))
-    (
-      fun (thirdPartyNpmLibs, thirdPartyOcamlfindLibs) => {
-        let thirdPartyLibDirs =
-          List.map thirdPartyNpmLibs f::(fun name => rel dir::nodeModulesRoot (tsl name));
-        /* each third party's own third party libs */
-        let thirdPartiesThirdPartyOcamlfindLibNamesD = Dep.all (
-          List.map thirdPartyLibDirs f::(fun libDir => getThirdPartyOcamlfindLibs libDir::libDir)
-        );
-        mapD
-          thirdPartiesThirdPartyOcamlfindLibNamesD
-          (
-            fun thirdPartiesThirdPartyOcamlfindLibNames =>
-              thirdPartyOcamlfindLibs @ List.concat thirdPartiesThirdPartyOcamlfindLibNames |> List.dedup
-          )
-      }
-    );
+let transitiveThirdPartyOcamlfindLibsIncludingSelf's = {
+  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::root;
+  let thirdPartyOcamlfindLibs = getThirdPartyOcamlfindLibs libDir::root;
+  let thirdPartyLibDirs =
+    List.map thirdPartyNpmLibs f::(fun name => rel dir::nodeModulesRoot (tsl name));
+  /* each third party's own third party libs */
+  let thirdPartiesThirdPartyOcamlfindLibNamesD =
+    List.map thirdPartyLibDirs f::(fun libDir => getThirdPartyOcamlfindLibs libDir::libDir);
+  thirdPartyOcamlfindLibs @ List.concat thirdPartiesThirdPartyOcamlfindLibNamesD |> List.dedup
+};
 
 /* Used to compile a library file. The compile command requires files to be passed in order. If A requires B
    but B is passed after A in the command, the compilation will fail with e.g. "module B not found" when
@@ -380,14 +334,16 @@ let compileSourcesScheme
     mapD
       (
         Dep.both
-          (getThirdPartyNpmLibs libDir::libDir)
+          (ocamlDepCurrentSources sourcePath::path)
           (
-            Dep.both
-              (ocamlDepCurrentSources sourcePath::path) (getThirdPartyOcamlfindLibs libDir::libDir)
+            Dep.return (
+              getThirdPartyNpmLibs libDir::libDir,
+              getThirdPartyOcamlfindLibs libDir::libDir
+            )
           )
       )
       (
-        fun (thirdPartyNpmLibs, (firstPartyDeps, thirdPartyOcamlfindLibNames)) => {
+        fun (firstPartyDeps, (thirdPartyNpmLibs, thirdPartyOcamlfindLibNames)) => {
           let isInterface' = isInterface path;
           let hasInterface =
             not isInterface' &&
@@ -586,77 +542,61 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
       sortedSourcePaths
       f::(fun path => rel dir::buildDir (namespacedName libName::topLibName path::path ^ ".cmo"));
   let cmosString = List.map cmos f::ts |> String.concat sep::" ";
-  Scheme.dep (
-    mapD
-      (
-        Dep.both
-          sortedTransitiveThirdPartyNpmLibsIncludingSelf's
-          transitiveThirdPartyOcamlfindLibsIncludingSelf's
+  let transitiveCmaPaths =
+    List.map
+      sortedTransitiveThirdPartyNpmLibsIncludingSelf's
+      f::(fun (Lib name) => rel dir::(rel dir::buildDirRoot name) libraryFileName);
+  let ocamlfindPackagesStr =
+    if (transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
+      ""
+    } else {
+      "-linkpkg -package " ^ (
+        List.map transitiveThirdPartyOcamlfindLibsIncludingSelf's f::tsl |> String.concat sep::","
       )
-      (
-        fun (
-              sortedTransitiveThirdPartyNpmLibsIncludingSelf's',
-              transitiveThirdPartyOcamlfindLibsIncludingSelf's'
-            ) => {
-          let transitiveCmaPaths =
-            List.map
-              sortedTransitiveThirdPartyNpmLibsIncludingSelf's'
-              f::(fun (Lib name) => rel dir::(rel dir::buildDirRoot name) libraryFileName);
-          let ocamlfindPackagesStr =
-            if (transitiveThirdPartyOcamlfindLibsIncludingSelf's' == []) {
-              ""
-            } else {
-              "-linkpkg -package " ^ (
-                List.map transitiveThirdPartyOcamlfindLibsIncludingSelf's' f::tsl |>
-                String.concat sep::","
-              )
-            };
-          let action =
-            bashf
-              /* For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
-                 the module invokes some jsoo's Js module-related stuff. */
-              /* Example command: ocamlc -g -I path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma \
-                 -open Top -o app.out  ../barDependsOnMe/lib.cma ../bar/lib.cma ../baz/lib.cma \
-                 top.cmo aDependsOnMe.cmo a.cmo moreFirstPartyCmo.cmo */
-              /* Flags:
-                 -I: search path(s), when ocamlc looks for modules referenced inside the file.
+    };
+  let action =
+    bashf
+      /* For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
+         the module invokes some jsoo's Js module-related stuff. */
+      /* Example command: ocamlc -g -I path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma \
+         -open Top -o app.out  ../barDependsOnMe/lib.cma ../bar/lib.cma ../baz/lib.cma \
+         top.cmo aDependsOnMe.cmo a.cmo moreFirstPartyCmo.cmo */
+      /* Flags:
+         -I: search path(s), when ocamlc looks for modules referenced inside the file.
 
-                 -open: compile the file as if [file being opened] was opened at the top of the file. In
-                 our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
-                 function for more comment.
+         -open: compile the file as if [file being opened] was opened at the top of the file. In
+         our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
+         function for more comment.
 
-                 -o: output file name.
-                 */
-              "ocamlfind ocamlc %s -g -open %s -o %s %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
-              ocamlfindPackagesStr
-              (tsm (libToModule topLibName))
-              (ts binaryOutput)
-              (transitiveCmaPaths |> List.map f::ts |> String.concat sep::" ")
-              (ts moduleAliasCmoPath)
-              cmosString;
-          Scheme.rules [
-            Rule.simple
-              targets::[binaryOutput]
-              deps::(
-                /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-                [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
-              )
-              action::action,
-            Rule.simple
-              targets::[jsOutput]
-              deps::[Dep.path binaryOutput]
-              action::(
-                bashf
-                  /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
-                     output is still butt ugly. Just kidding I love you guys. */
-                  "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
-                  (ts jsOutput)
-                  (ts binaryOutput)
-              )
-          ]
-        }
+         -o: output file name.
+         */
+      "ocamlfind ocamlc %s -g -open %s -o %s %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
+      ocamlfindPackagesStr
+      (tsm (libToModule topLibName))
+      (ts binaryOutput)
+      (transitiveCmaPaths |> List.map f::ts |> String.concat sep::" ")
+      (ts moduleAliasCmoPath)
+      cmosString;
+  Scheme.rules [
+    Rule.simple
+      targets::[binaryOutput]
+      deps::(
+        /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
+        [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
       )
-  )
+      action::action,
+    Rule.simple
+      targets::[jsOutput]
+      deps::[Dep.path binaryOutput]
+      action::(
+        bashf
+          /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
+             output is still butt ugly. Just kidding I love you guys. */
+          "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
+          (ts jsOutput)
+          (ts binaryOutput)
+      )
+  ]
 };
 
 /* The function that ties together all the previous steps and compiles a given library, whether it be our top
@@ -744,10 +684,10 @@ FLG -w -30 -w -40 -open %s
   };
   Scheme.rules [
     Rule.create
-      targets::[dotMerlinPath] (mapD (getThirdPartyOcamlfindLibs libDir::dir) saveMerlinAction)
+      targets::[dotMerlinPath]
+      (mapD (Dep.return (getThirdPartyOcamlfindLibs libDir::dir)) saveMerlinAction)
   ]
 };
-
 
 let scheme dir::dir => {
   ignore dir;
@@ -759,7 +699,7 @@ let scheme dir::dir => {
     let packageJsonPath = rel dir::root "package.json";
     let dotMerlinDefaultScheme = Scheme.rules_dep (
       mapD
-        (getThirdPartyNpmLibs libDir::root)
+        (Dep.return (getThirdPartyNpmLibs libDir::root))
         (
           fun libs => {
             let thirdPartyRoots =
@@ -810,5 +750,4 @@ let env () => Env.create
        }
      ) */
   scheme;
-
 /* let setup () => Deferred.return env; */
