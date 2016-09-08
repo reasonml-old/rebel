@@ -20,8 +20,7 @@
     "extract": "npm run extract:deps && npm run extract:ocamlfind-deps && npm run extract:rebel-compat",
     "rebel-to-ml": "refmt -print ml -parse re rebel.re | sed 's/\\[@explicit_arity \\]//g' > rebel.ml",
     "postinstall": "eval $(dependencyEnv) && nopam && npm run extract && npm run rebel-to-ml",
-    "custom-jenga:build": "ocamlfind ocamlc -pp refmt -thread -linkpkg -package ppx_let -package core -package async -package jenga -g -impl index.re -o index.native",
-    "custom-jenga": "eval $(dependencyEnv) && nopam && npm run custom-jenga:build"
+    "rebel": "eval $(dependencyEnv) && nopam && ./configure --prefix $opam_prefix && make"
   },
   "version": "0.0.23"
 }
