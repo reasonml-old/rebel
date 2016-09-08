@@ -9,3 +9,16 @@ _build/
 rebel.ml
 node_modules/
 npm-debug.log
+
+setup.data
+setup.log
+setup.ml
+_tags
+Makefile
+myocamlbuild.ml
+configure
+
+*.native
+*.byte
+
+src/*.ml

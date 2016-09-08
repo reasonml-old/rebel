@@ -42,9 +42,11 @@ let isInterface path => {
 };
 
 /* this rebel-specific helpers */
-type moduleName = | Mod string;
+type moduleName =
+  | Mod string;
 
-type libName = | Lib string;
+type libName =
+  | Lib string;
 
 let topLibName = Lib "top";
 
@@ -132,7 +134,7 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
                  here), or is a nested module from an `open`ed module, which ocamldep would have detected and
                  returned in this list. */
               List.filter deps f::(fun m => m != originalModule) |>
-                List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
+              List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
             }
           )
     )
@@ -165,8 +167,7 @@ let withRebelCompatibleLibs libs =>
           fun lib =>
             Dep.both
               (isDirRebelCampatible libDir::(rel dir::nodeModulesRoot (tsl lib))) (Dep.return lib)
-        )
-        |> Dep.all
+        ) |> Dep.all
     )
     (fun list => List.filter f::(fun (a, _) => a) list |> List.map f::(fun (_, b) => b));
 
@@ -192,8 +193,8 @@ let getThirdPartyNpmLibs libDir::libDir => {
       )
       (
         fun content =>
-          String.split content on::'\n' |>
-            List.filter f::nonBlank |> List.map f::(fun name => Lib name)
+          String.split content on::'\n' |> List.filter f::nonBlank |>
+          List.map f::(fun name => Lib name)
       );
   bindD deps withRebelCompatibleLibs
 };
@@ -219,8 +220,8 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
     )
     (
       fun content =>
-        String.split content on::'\n' |>
-          List.filter f::nonBlank |> List.map f::(fun name => Lib name)
+        String.split content on::'\n' |> List.filter f::nonBlank |>
+        List.map f::(fun name => Lib name)
     )
 };
 
@@ -307,9 +308,8 @@ let sortPathsTopologically paths::paths => {
     moduleDepsForPathsD
     (
       fun moduleDepsForPaths =>
-        List.zip_exn pathsAsModules moduleDepsForPaths |>
-          topologicalSort |>
-          List.map f::(fun m => List.Assoc.find_exn pathsAsModulesOriginalCapitalization m)
+        List.zip_exn pathsAsModules moduleDepsForPaths |> topologicalSort |>
+        List.map f::(fun m => List.Assoc.find_exn pathsAsModulesOriginalCapitalization m)
     )
 };
 
@@ -345,7 +345,7 @@ let moduleAliasFileScheme
             (tsm (pathToModule path))
             (namespacedName libName::libName path::path)
       ) |>
-      String.concat sep::"";
+    String.concat sep::"";
   let action =
     bashf
       /* We suppress a few warnings here through -w.
@@ -409,12 +409,12 @@ let compileSourcesScheme
           let isInterface' = isInterface path;
           let hasInterface =
             not isInterface' &&
-              List.exists
-                sourcePaths
-                f::(
-                  fun path' =>
-                    isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path
-                );
+            List.exists
+              sourcePaths
+              f::(
+                fun path' =>
+                  isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path
+              );
           /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
              to recompile the dependent modules. Win. */
           let firstPartyCmisDeps =
@@ -426,11 +426,11 @@ let compileSourcesScheme
                   List.exists firstPartyDeps f::(fun m => m == pathAsModule)
                 }
               ) |>
-              List.map
-                f::(
-                  fun path =>
-                    relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi")
-                );
+            List.map
+              f::(
+                fun path =>
+                  relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi")
+              );
           let firstPartyCmisDeps =
             if (not isInterface' && hasInterface) {
               [
@@ -534,7 +534,7 @@ let compileSourcesScheme
               (
                 List.map
                   thirdPartyNpmLibs f::(fun (Lib name) => "-I " ^ ts (rel dir::buildDirRoot name)) |>
-                  String.concat sep::" "
+                String.concat sep::" "
               )
               (ts (rel dir::buildDir namespacedName'))
               (ts path);
@@ -626,7 +626,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
             } else {
               "-linkpkg -package " ^ (
                 List.map transitiveThirdPartyOcamlfindLibsIncludingSelf's' f::tsl |>
-                  String.concat sep::","
+                String.concat sep::","
               )
             };
           let action =
@@ -814,7 +814,7 @@ let scheme dir::dir => {
   }
 };
 
-let env = Env.create
+let env () => Env.create
   /* TODO: this doesn't traverse down to _build so I can't ask it to clean files there? */
   /* artifacts::(
        fun dir::dir => {
@@ -828,4 +828,4 @@ let env = Env.create
      ) */
   scheme;
 
-let setup () => Deferred.return env;
+/* let setup () => Deferred.return env; */

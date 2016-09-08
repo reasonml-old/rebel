@@ -4,21 +4,24 @@
     "run": "run"
   },
   "dependencies": {
-    "reason": "https://github.com/facebook/reason",
-    "nopam": "https://github.com/yunxing/nopam.git",
     "dependency-env": "https://github.com/npm-ml/dependency-env.git",
+    "nopam": "https://github.com/yunxing/nopam.git",
     "yojson": "https://github.com/npm-opam/yojson",
-    "ocamlfind": "https://github.com/npm-opam/ocamlfind",
-    "jenga-bin": "https://github.com/reasonml/jenga-bin",
-    "js_of_ocaml-bin": "https://github.com/reasonml/js_of_ocaml-bin.git"
+    "jenga": "https://github.com/npm-opam/jenga"
   },
   "description": "Prototype that conforms to the magic-build spec. Implemented with Jenga.",
   "devDependencies": {},
   "license": "ISC",
   "name": "rebel",
   "scripts": {
-    "postinstall": "eval $(dependencyEnv) && nopam && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractDeps.re -o buildUtils/extractDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractOcamlfindDeps.re -o buildUtils/extractOcamlfindDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/isDepRebelCompatible.re -o buildUtils/isDepRebelCompatible.out && refmt -print ml -parse re rebel.re | sed 's/\\[@explicit_arity \\]//g' > rebel.ml",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "extract:deps": "ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractDeps.re -o buildUtils/extractDeps.out",
+    "extract:ocamlfind-deps": "ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractOcamlfindDeps.re -o buildUtils/extractOcamlfindDeps.out",
+    "extract:rebel-compat": "ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/isDepRebelCompatible.re -o buildUtils/isDepRebelCompatible.out",
+    "extract": "npm run extract:deps && npm run extract:ocamlfind-deps && npm run extract:rebel-compat",
+    "rebel-to-ml": "refmt -print ml -parse re rebel.re | sed 's/\\[@explicit_arity \\]//g' > rebel.ml",
+    "postinstall": "eval $(dependencyEnv) && nopam && npm run extract && npm run rebel-to-ml",
+    "custom-jenga:build": "ocamlfind ocamlc -pp refmt -thread -linkpkg -package ppx_let -package core -package async -package jenga -g -impl index.re -o index.native",
+    "custom-jenga": "eval $(dependencyEnv) && nopam && npm run custom-jenga:build"
   },
   "version": "0.0.23"
 }

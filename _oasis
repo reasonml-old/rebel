@@ -1,0 +1,29 @@
+Name: Rebel
+Version: 0.1
+Synopsis: A library about Rebel.
+Authors: Me <me@myhost.com>
+License: MIT with OCaml linking exception
+
+Description: FooBar allows to combine foo and bar efficiently. It also allows to interface with baz.
+Homepage: http://foobar.org
+
+OASISFormat: 0.4
+OCamlVersion:          >= 4.02.3
+FindlibVersion:        >= 1.3.2
+BuildTools: ocamlbuild
+Plugins: META (0.4), DevFiles (0.4)
+
+BuildTools:            ocamlbuild
+BetaFeatures:          section_object
+AlphaFeatures:         ocamlbuild_more_args
+XOCamlbuildPluginTags: package(js-build-tools.ocamlbuild_goodies), package(ppx_driver.ocamlbuild)
+
+Executable "rebel"
+  Path:           src
+  MainIs:         index.ml
+  CompiledObject: native
+  BuildDepends:   core,
+                  threads,
+                  yojson,
+                  jenga,
+                  ppx_let
