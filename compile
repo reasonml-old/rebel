@@ -1,1 +1,1 @@
-jenga -path-to-jenga-conf ./node_modules/rebel/jenga.conf
+./node_modules/rebel/node_modules/.bin/jenga -path-to-jenga-conf ./node_modules/rebel/jenga.conf
