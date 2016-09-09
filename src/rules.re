@@ -70,7 +70,7 @@ let backends = {
     Util.to_option (fun a => a |> Util.member "backend");
   switch backends' {
   | Some (`List _ as a) => List.map f::Util.to_string (Util.to_list a)
-  | None => ["native", "javascript"]
+  | None => ["native", "jsoo"]
   | _ => []
   }
 };
@@ -587,7 +587,8 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
       (ts moduleAliasCmoPath)
       cmosString;
   let nativeRule =
-    List.exists f::(fun x => x == "native") backends ?
+    /* We check here for jsoo because jsoo needs binaryOutput */
+    List.mem backends "native" || List.mem backends "jsoo" ?
       [
         Rule.simple
           targets::[binaryOutput]
@@ -599,7 +600,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
       ] :
       [];
   let javascriptRule =
-    List.exists f::(fun x => x == "javascript") backends ?
+    List.mem backends "jsoo" ?
       [
         Rule.simple
           targets::[jsOutput]
@@ -727,10 +728,15 @@ let scheme dir::dir => {
           }
         )
     );
-    List.iter f::print_endline (Array.to_list Sys.argv);
+    let defaultRule =
+      switch backends {
+      | _ when List.mem backends "jsoo" => [Dep.path jsOutput]
+      | _ when List.mem backends "native" => [Dep.path binaryOutput]
+      | _ => []
+      };
     Scheme.all [
       dotMerlinScheme isTopLevelLib::true dir::root libName::topLibName,
-      Scheme.rules [Rule.default dir::dir [relD dir::root ".merlin"]],
+      Scheme.rules [Rule.default dir::dir (defaultRule @ [relD dir::root ".merlin"])],
       Scheme.exclude (fun path => path == packageJsonPath) dotMerlinDefaultScheme
     ]
   } else if (
