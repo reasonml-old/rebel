@@ -50,7 +50,10 @@ type moduleName =
 type libName =
   | Lib string;
 
-let topLibName = Lib "top";
+let topLibName = {
+  let packageJsonPath = rel dir::root "package.json";
+  from_file (ts packageJsonPath) |> Util.member "name" |> Util.to_string |> (fun name => Lib name)
+};
 
 let libraryFileName = "lib.cma";
 
@@ -547,11 +550,12 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
       (sortedTransitiveThirdPartyNpmLibsIncludingSelf's ())
       f::(fun (Lib name) => rel dir::(rel dir::buildDirRoot name) libraryFileName);
   let ocamlfindPackagesStr =
-    if ((transitiveThirdPartyOcamlfindLibsIncludingSelf's ()) == []) {
+    if (transitiveThirdPartyOcamlfindLibsIncludingSelf's () == []) {
       ""
     } else {
       "-linkpkg -package " ^ (
-        List.map (transitiveThirdPartyOcamlfindLibsIncludingSelf's ()) f::tsl |> String.concat sep::","
+        List.map (transitiveThirdPartyOcamlfindLibsIncludingSelf's ()) f::tsl |>
+        String.concat sep::","
       )
     };
   let action =
