@@ -63,6 +63,18 @@ let buildDirRoot = rel dir::root "_build";
 
 let topSrcDir = rel dir::root "src";
 
+let backends = {
+  let packageJsonPath = rel dir::root "package.json";
+  let backends' =
+    from_file (ts packageJsonPath) |> Util.member "rebel" |>
+    Util.to_option (fun a => a |> Util.member "backend");
+  switch backends' {
+  | Some (`List _ as a) => List.map f::Util.to_string (Util.to_list a)
+  | None => ["native", "javascript"]
+  | _ => []
+  }
+};
+
 let tsm (Mod s) => s;
 
 let tsl (Lib s) => s;
@@ -335,14 +347,11 @@ let compileSourcesScheme
   let moduleAliasDep extension => relD dir::buildDir (tsm (libToModule libName) ^ "." ^ extension);
   let compileEachSourcePath path =>
     mapD
+      (ocamlDepCurrentSources sourcePath::path)
       (
-        ocamlDepCurrentSources sourcePath::path
-      )
-      (
-        fun (firstPartyDeps) => {
+        fun firstPartyDeps => {
           let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::libDir;
           let thirdPartyOcamlfindLibNames = getThirdPartyOcamlfindLibs libDir::libDir;
-
           let isInterface' = isInterface path;
           let hasInterface =
             not isInterface' &&
@@ -577,26 +586,35 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
       (transitiveCmaPaths |> List.map f::ts |> String.concat sep::" ")
       (ts moduleAliasCmoPath)
       cmosString;
-  Scheme.rules [
-    Rule.simple
-      targets::[binaryOutput]
-      deps::(
-        /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-        [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
-      )
-      action::action,
-    Rule.simple
-      targets::[jsOutput]
-      deps::[Dep.path binaryOutput]
-      action::(
-        bashf
-          /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
-             output is still butt ugly. Just kidding I love you guys. */
-          "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
-          (ts jsOutput)
-          (ts binaryOutput)
-      )
-  ]
+  let nativeRule =
+    List.exists f::(fun x => x == "native") backends ?
+      [
+        Rule.simple
+          targets::[binaryOutput]
+          deps::(
+            /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
+            [moduleAliasCmoPath] @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
+          )
+          action::action
+      ] :
+      [];
+  let javascriptRule =
+    List.exists f::(fun x => x == "javascript") backends ?
+      [
+        Rule.simple
+          targets::[jsOutput]
+          deps::[Dep.path binaryOutput]
+          action::(
+            bashf
+              /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
+                 output is still butt ugly. Just kidding I love you guys. */
+              "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
+              (ts jsOutput)
+              (ts binaryOutput)
+          )
+      ] :
+      [];
+  Scheme.rules (List.append nativeRule javascriptRule)
 };
 
 /* The function that ties together all the previous steps and compiles a given library, whether it be our top
@@ -712,9 +730,7 @@ let scheme dir::dir => {
     List.iter f::print_endline (Array.to_list Sys.argv);
     Scheme.all [
       dotMerlinScheme isTopLevelLib::true dir::root libName::topLibName,
-      Scheme.rules [
-        Rule.default dir::dir [relD dir::root ".merlin"]
-      ],
+      Scheme.rules [Rule.default dir::dir [relD dir::root ".merlin"]],
       Scheme.exclude (fun path => path == packageJsonPath) dotMerlinDefaultScheme
     ]
   } else if (
