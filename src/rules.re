@@ -336,17 +336,13 @@ let compileSourcesScheme
   let compileEachSourcePath path =>
     mapD
       (
-        Dep.both
-          (ocamlDepCurrentSources sourcePath::path)
-          (
-            Dep.return (
-              getThirdPartyNpmLibs libDir::libDir,
-              getThirdPartyOcamlfindLibs libDir::libDir
-            )
-          )
+        ocamlDepCurrentSources sourcePath::path
       )
       (
-        fun (firstPartyDeps, (thirdPartyNpmLibs, thirdPartyOcamlfindLibNames)) => {
+        fun (firstPartyDeps) => {
+          let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::libDir;
+          let thirdPartyOcamlfindLibNames = getThirdPartyOcamlfindLibs libDir::libDir;
+
           let isInterface' = isInterface path;
           let hasInterface =
             not isInterface' &&
@@ -713,10 +709,11 @@ let scheme dir::dir => {
           }
         )
     );
+    List.iter f::print_endline (Array.to_list Sys.argv);
     Scheme.all [
       dotMerlinScheme isTopLevelLib::true dir::root libName::topLibName,
       Scheme.rules [
-        Rule.default dir::dir [Dep.path binaryOutput, Dep.path jsOutput, relD dir::root ".merlin"]
+        Rule.default dir::dir [relD dir::root ".merlin"]
       ],
       Scheme.exclude (fun path => path == packageJsonPath) dotMerlinDefaultScheme
     ]
