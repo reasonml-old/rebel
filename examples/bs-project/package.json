@@ -1,5 +1,5 @@
 {
-  "name": "rebel-project",
+  "name": "bs-project",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -9,9 +9,14 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "rebel": {
+    "backend": [
+      "bucklescript"
+    ]
+  },
   "dependencies": {
   },
-  "rebel": {
-    "backend": [ "native" ]
+  "devDependencies": {
+    "bs-platform": "^1.0.1"
   }
 }

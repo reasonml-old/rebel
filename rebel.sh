@@ -7,4 +7,6 @@ rm -f src/bsRules.ml && refmt -print ml -parse re src/bsRules.re >> src/bsRules.
 rm -f src/rebel.ml && refmt -print ml -parse re src/rebel.re >> src/rebel.ml
 
 # recompile oasis just in case _oasis is changed
-oasis setup && ./configure && make && cp -f ./rebel.native examples/rebel-project/node_modules/.bin/rebel && cd examples/rebel-project && ./node_modules/.bin/rebel && ./_build/rebel-project/app.out
+oasis setup && ./configure && \
+make && cp -f ./rebel.native examples/rebel-project/node_modules/.bin/rebel && \
+cd examples/rebel-project && npm start
