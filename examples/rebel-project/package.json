@@ -1,0 +1,17 @@
+{
+  "name": "rebel-project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "rebel": "rebel"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "depedencies": {
+  },
+  "rebel": {
+    "backend": [ "native" ]
+  }
+}

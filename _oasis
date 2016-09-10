@@ -21,7 +21,7 @@ XOCamlbuildPluginTags: package(js-build-tools.ocamlbuild_goodies), package(ppx_d
 Executable "rebel"
   Path:           src
   MainIs:         rebel.ml
-  CompiledObject: native
+  CompiledObject: best
   BuildDepends:   core,
                   threads,
                   yojson,

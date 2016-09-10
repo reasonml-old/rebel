@@ -482,9 +482,7 @@ let find_ancestor_directory_containing one_of::one_of => {
 
 open Jenga_lib.Build.Jr_spec;
 
-let root_markers = [".git", ".hg"] |> List.map f::Path.Rel.create;
-
-/* let setup () => Env.create (fun dir::dir => Scheme.no_rules); */
+let root_markers = [".git", ".hg", "package.json"] |> List.map f::Path.Rel.create;
 
 let () =
   main

@@ -14,12 +14,7 @@
   "license": "ISC",
   "name": "rebel",
   "scripts": {
-    "rebel-to-ml": "refmt -print ml -parse re rebel.re | sed 's/\\[@explicit_arity \\]//g' > rebel.ml",
-    "postinstall": "eval $(dependencyEnv) && nopam && npm run rebel-to-ml",
-    "rebel:ml": "rm src/rules.ml && refmt -print ml -parse re src/rules.re >> src/rules.ml && rm src/rebel.ml && refmt -print ml -parse re src/rebel.re >> src/rebel.ml",
-    "rebel:make": "oasis setup && ./configure && make",
-    "rebel:cp": "cp -f ./rebel.native ../rebel-project/node_modules/.bin/rebel && cd ../rebel-project && ./node_modules/.bin/rebel",
-    "rebel-alt": "npm run rebel:ml && npm run rebel:make && npm run rebel:cp",
+    "rebel-alt": "./rebel.sh",
     "rebel": "eval $(dependencyEnv) && nopam && ./configure --prefix $opam_prefix && make"
   },
   "version": "0.0.23"
