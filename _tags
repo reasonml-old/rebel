@@ -29,3 +29,6 @@ true: annot, bin_annot
 
 "node_modules": -traverse
 "node_modules": not_hygienic
+
+"examples": -traverse
+"examples": not_hygienic
