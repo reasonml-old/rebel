@@ -10,63 +10,12 @@ open Async.Std;
 
 open Jenga_lib.Api;
 
-/* general helpers */
-let mapD = Dep.map;
-
-let bindD = Dep.bind;
-
-let rel = Path.relative;
-
-let ts = Path.to_string;
-
-let root = Path.the_root;
-
-let bash command => Action.process dir::root prog::"bash" args::["-c", command] ();
-
-let bashf fmt => ksprintf bash fmt;
-
-let nonBlank s =>
-  switch (String.strip s) {
-  | "" => false
-  | _ => true
-  };
-
-let relD dir::dir str => Dep.path (rel dir::dir str);
-
-/* assumes there is a suffix to chop. Throws otherwise */
-let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
-
-let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
-
-let isInterface path => {
-  let base = Path.basename path;
-  String.is_suffix base suffix::".rei" || String.is_suffix base suffix::".mli"
-};
-
-/* this rebel-specific helpers */
-type moduleName =
-  | Mod string;
-
-type libName =
-  | Lib string;
-
-let topLibName = {
-  let packageJsonPath = rel dir::root "package.json";
-  from_file (ts packageJsonPath) |> Util.member "name" |> Util.to_string |> (fun name => Lib name)
-};
-
 let libraryFileName = "lib.cma";
 
-let nodeModulesRoot = rel dir::root "node_modules";
-
-let buildDirRoot = rel dir::root "_build";
-
-let topSrcDir = rel dir::root "src";
-
 let backends = {
-  let packageJsonPath = rel dir::root "package.json";
+  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
   let backends' =
-    from_file (ts packageJsonPath) |> Util.member "rebel" |>
+    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
     Util.to_option (fun a => a |> Util.member "backend");
   switch backends' {
   | Some (`List _ as a) => List.map f::Util.to_string (Util.to_list a)
@@ -75,77 +24,56 @@ let backends = {
   }
 };
 
-let tsm (Mod s) => s;
+/* Is this style Ok? */
+let binaryOutput =
+  Utils.(Path.relative dir::(Path.relative dir::buildDirRoot (tsl topLibName)) "app.out");
 
-let tsl (Lib s) => s;
-
-let binaryOutput = rel dir::(rel dir::buildDirRoot (tsl topLibName)) "app.out";
-
-let jsOutput = rel dir::(rel dir::buildDirRoot (tsl topLibName)) "app.js";
-
-let kebabToCamel =
-  String.foldi
-    init::""
-    f::(
-      fun _ accum char =>
-        if (accum == "") {
-          Char.to_string char
-        } else if (accum.[String.length accum - 1] == '-') {
-          String.slice accum 0 (-1) ^ (Char.to_string char |> String.capitalize)
-        } else {
-          accum ^ Char.to_string char
-        }
-    );
-
-let libToModule (Lib name) => Mod (String.capitalize name |> kebabToCamel);
-
-let pathToModule path => Mod (fileNameNoExtNoDir path |> String.capitalize);
-
-let namespacedName libName::libName path::path =>
-  tsm (libToModule libName) ^ "__" ^ tsm (pathToModule path);
+let jsOutput =
+  Utils.(Path.relative dir::(Path.relative dir::buildDirRoot (tsl topLibName)) "app.js");
 
 /* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module
    tracking in the presence of `open` */
 let ocamlDep sourcePath::sourcePath => {
-  let flag = isInterface sourcePath ? "-intf" : "-impl";
+  let flag = Utils.isInterface sourcePath ? "-intf" : "-impl";
   let action = Dep.action_stdout (
-    mapD
+    Dep.map
       (Dep.path sourcePath)
       (
         fun () =>
-          bashf
+          Utils.bashf
             /* seems like refmt intelligently detects source code type (re/ml) */
             "ocamldep -pp refmt -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s 2>&1; (exit ${PIPESTATUS[0]})"
             flag
-            (ts sourcePath)
+            (Path.to_string sourcePath)
       )
   );
   let processRawString string =>
     switch (String.strip string |> String.split on::':') {
     | [original, deps] => (
-        rel dir::root original,
-        String.split deps on::' ' |> List.filter f::nonBlank |> List.map f::(fun m => Mod m)
+        Path.relative dir::Path.the_root original,
+        String.split deps on::' ' |> List.filter f::Utils.nonBlank |>
+        List.map f::(fun m => Utils.Mod m)
       )
     | _ => failwith "expected exactly one ':' in ocamldep output line"
     };
-  mapD action processRawString
+  Dep.map action processRawString
 };
 
 /* Get only the dependencies on sources in the current library. */
 let ocamlDepCurrentSources sourcePath::sourcePath => {
   let srcDir = Path.dirname sourcePath;
-  bindD
+  Dep.bind
     (ocamlDep sourcePath::sourcePath)
     (
       fun (original, deps) =>
-        mapD
+        Dep.map
           (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}"))
           (
             fun sourcePaths => {
-              let originalModule = pathToModule original;
+              let originalModule = Utils.pathToModule original;
               /* Dedupe, because we might have foo.re and foo.rei */
-              let sourceModules = List.map sourcePaths f::pathToModule |> List.dedup;
+              let sourceModules = List.map sourcePaths f::Utils.pathToModule |> List.dedup;
               /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
                  itself, which means that Foo either comes from a third-party module (which we can ignore
                  here), or is a nested module from an `open`ed module, which ocamldep would have detected and
@@ -158,21 +86,25 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
 };
 
 let isDirRebelCampatible libDir::libDir => {
-  let packageJsonPath = rel dir::libDir "package.json";
-  [from_file (ts packageJsonPath)] |> Util.filter_member "rebel" |> List.length != 0
+  let packageJsonPath = Path.relative dir::libDir "package.json";
+  [from_file (Path.to_string packageJsonPath)] |> Util.filter_member "rebel" |> List.length != 0
 };
 
 let withRebelCompatibleLibs =
-  List.filter f::(fun lib => isDirRebelCampatible libDir::(rel dir::nodeModulesRoot (tsl lib)));
+  List.filter
+    f::(
+      fun lib =>
+        isDirRebelCampatible libDir::(Path.relative dir::Utils.nodeModulesRoot (Utils.tsl lib))
+    );
 
 /* Simply read into the package.json "dependencies" field. */
 let getThirdPartyNpmLibs libDir::libDir => {
-  let packageJsonPath = rel dir::libDir "package.json";
+  let packageJsonPath = Path.relative dir::libDir "package.json";
   let deps =
-    [from_file (ts packageJsonPath)] |> Util.filter_member "dependencies" |> Util.filter_assoc;
+    [from_file (Path.to_string packageJsonPath)] |> Util.filter_member "dependencies" |> Util.filter_assoc;
   let libs =
     switch deps {
-    | [x] => x |> List.map f::fst |> List.map f::(fun name => Lib name)
+    | [x] => x |> List.map f::fst |> List.map f::(fun name => Utils.Lib name)
     | _ => []
     };
   withRebelCompatibleLibs libs
@@ -180,12 +112,12 @@ let getThirdPartyNpmLibs libDir::libDir => {
 
 /* Simply read into the package.json "rebel.ocamlfindDependencies" field. */
 let getThirdPartyOcamlfindLibs libDir::libDir => {
-  let packageJsonPath = rel dir::libDir "package.json";
+  let packageJsonPath = Path.relative dir::libDir "package.json";
   let deps =
-    from_file (ts packageJsonPath) |> Util.member "rebel" |>
+    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
     Util.to_option (fun a => a |> Util.member "ocamlfindDependencies");
   switch deps {
-  | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Lib name)
+  | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Utils.Lib name)
   | _ => []
   }
 };
@@ -219,14 +151,14 @@ let topologicalSort graph => {
 /* Figure out the order in which third-party libs should be compiled, based on their dependencies (the
    depended is compiled before the dependent). */
 let sortedTransitiveThirdPartyNpmLibsIncludingSelf's () => {
-  let thirdPartyLibs = getThirdPartyNpmLibs libDir::root;
+  let thirdPartyLibs = getThirdPartyNpmLibs libDir::Path.the_root;
   let thirdPartyDeps =
     List.map
       thirdPartyLibs
       f::(
         fun name => {
           /* third party's own third party libs */
-          let libDir = rel dir::nodeModulesRoot (tsl name);
+          let libDir = Path.relative dir::Utils.nodeModulesRoot (Utils.tsl name);
           (name, getThirdPartyNpmLibs libDir::libDir)
         }
       );
@@ -235,10 +167,11 @@ let sortedTransitiveThirdPartyNpmLibsIncludingSelf's () => {
 };
 
 let transitiveThirdPartyOcamlfindLibsIncludingSelf's () => {
-  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::root;
-  let thirdPartyOcamlfindLibs = getThirdPartyOcamlfindLibs libDir::root;
+  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::Path.the_root;
+  let thirdPartyOcamlfindLibs = getThirdPartyOcamlfindLibs libDir::Path.the_root;
   let thirdPartyLibDirs =
-    List.map thirdPartyNpmLibs f::(fun name => rel dir::nodeModulesRoot (tsl name));
+    List.map
+      thirdPartyNpmLibs f::(fun name => Path.relative dir::Utils.nodeModulesRoot (Utils.tsl name));
   /* each third party's own third party libs */
   let thirdPartiesThirdPartyOcamlfindLibNamesD =
     List.map thirdPartyLibDirs f::(fun libDir => getThirdPartyOcamlfindLibs libDir::libDir);
@@ -250,12 +183,12 @@ let transitiveThirdPartyOcamlfindLibsIncludingSelf's () => {
    compiling A */
 let sortPathsTopologically paths::paths => {
   let pathsAsModulesOriginalCapitalization =
-    List.map paths f::(fun path => (pathToModule path, path));
+    List.map paths f::(fun path => (Utils.pathToModule path, path));
   let pathsAsModules = List.map pathsAsModulesOriginalCapitalization f::fst;
   let moduleDepsForPathsD = Dep.all (
     List.map paths f::(fun path => ocamlDepCurrentSources sourcePath::path)
   );
-  mapD
+  Dep.map
     moduleDepsForPathsD
     (
       fun moduleDepsForPaths =>
@@ -281,7 +214,8 @@ let moduleAliasFileScheme
     buildDir::buildDir
     sourceNotInterfacePaths::sourceNotInterfacePaths
     libName::libName => {
-  let name extension => rel dir::buildDir (tsm (libToModule libName) ^ "." ^ extension);
+  let name extension =>
+    Path.relative dir::buildDir (Utils.tsm (Utils.libToModule libName) ^ "." ^ extension);
   let sourcePath = name "ml";
   let cmo = name "cmo";
   let cmi = name "cmi";
@@ -293,12 +227,12 @@ let moduleAliasFileScheme
         fun path =>
           Printf.sprintf
             "module %s = %s\n"
-            (tsm (pathToModule path))
-            (namespacedName libName::libName path::path)
+            (Utils.tsm (Utils.pathToModule path))
+            (Utils.namespacedName libName::libName path::path)
       ) |>
     String.concat sep::"";
   let action =
-    bashf
+    Utils.bashf
       /* We suppress a few warnings here through -w.
          - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
          can't be found at the moment this module alias file is compiled. This is normal, since the
@@ -324,11 +258,11 @@ let moduleAliasFileScheme
          -o: output name
          */
       "ocamlc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
-      (ts sourcePath)
-      (ts cmo);
+      (Path.to_string sourcePath)
+      (Path.to_string cmo);
   /* TODO: do we even need the cmo file here? */
   let compileRule =
-    Rule.create targets::[cmo, cmi, cmt] (mapD (Dep.path sourcePath) (fun () => action));
+    Rule.create targets::[cmo, cmi, cmt] (Dep.map (Dep.path sourcePath) (fun () => action));
   let contentRule =
     Rule.create targets::[sourcePath] (Dep.return (Action.save fileContent target::sourcePath));
   Scheme.rules [contentRule, compileRule]
@@ -344,22 +278,24 @@ let compileSourcesScheme
     sourcePaths::sourcePaths => {
   /* This is the module alias file generated through `moduleAliasFileScheme`, that we said we're gonna `-open`
      during `ocamlc` */
-  let moduleAliasDep extension => relD dir::buildDir (tsm (libToModule libName) ^ "." ^ extension);
+  let moduleAliasDep extension =>
+    Utils.relD dir::buildDir (Utils.tsm (Utils.libToModule libName) ^ "." ^ extension);
   let compileEachSourcePath path =>
-    mapD
+    Dep.map
       (ocamlDepCurrentSources sourcePath::path)
       (
         fun firstPartyDeps => {
           let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::libDir;
           let thirdPartyOcamlfindLibNames = getThirdPartyOcamlfindLibs libDir::libDir;
-          let isInterface' = isInterface path;
+          let isInterface' = Utils.isInterface path;
           let hasInterface =
             not isInterface' &&
             List.exists
               sourcePaths
               f::(
                 fun path' =>
-                  isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path
+                  Utils.isInterface path' &&
+                  Utils.fileNameNoExtNoDir path' == Utils.fileNameNoExtNoDir path
               );
           /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
              to recompile the dependent modules. Win. */
@@ -368,27 +304,29 @@ let compileSourcesScheme
               sourcePaths
               f::(
                 fun path => {
-                  let pathAsModule = pathToModule path;
+                  let pathAsModule = Utils.pathToModule path;
                   List.exists firstPartyDeps f::(fun m => m == pathAsModule)
                 }
               ) |>
             List.map
               f::(
                 fun path =>
-                  relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi")
+                  Utils.relD
+                    dir::buildDir (Utils.namespacedName libName::libName path::path ^ ".cmi")
               );
           let firstPartyCmisDeps =
             if (not isInterface' && hasInterface) {
               [
                 /* We're a source file with an interface; include our own cmi as a dependency (our interface
                    file should be compile before ourselves). */
-                relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi"),
+                Utils.relD
+                  dir::buildDir (Utils.namespacedName libName::libName path::path ^ ".cmi"),
                 ...firstPartyCmisDeps
               ]
             } else {
               firstPartyCmisDeps
             };
-          let namespacedName' = namespacedName libName::libName path::path;
+          let namespacedName' = Utils.namespacedName libName::libName path::path;
           /* Compiling the current source file depends on all of the cmis of all its third-party libraries'
              source files being compiled. This is very coarse since in reality, we only depend on a few source
              files of these third-party libs. But ocamldep isn't granular enough to give us this information
@@ -400,13 +338,17 @@ let compileSourcesScheme
                 fun libName =>
                   /* if one of a third party library foo's source is Hi.re, then it resides in
                      `node_modules/foo/src/Hi.re`, and its cmi artifacts in `_build/foo/Foo__Hi.cmi` */
-                  bindD
+                  Dep.bind
                     (
                       Dep.glob_listing (
                         Glob.create
                           /* No need to glob `.rei/.mli`s here. We're only getting the file names to
                              construct cmi paths. */
-                          dir::(rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src")
+                          dir::(
+                            Path.relative
+                              dir::(Path.relative dir::Utils.nodeModulesRoot (Utils.tsl libName))
+                              "src"
+                          )
                           "*.{re,ml}"
                       )
                     )
@@ -416,17 +358,17 @@ let compileSourcesScheme
                           thirdPartySources
                           f::(
                             fun sourcePath =>
-                              relD
-                                dir::(rel dir::buildDirRoot (tsl libName))
-                                (namespacedName libName::libName path::sourcePath ^ ".cmi")
+                              Utils.relD
+                                dir::(Path.relative dir::Utils.buildDirRoot (Utils.tsl libName))
+                                (Utils.namespacedName libName::libName path::sourcePath ^ ".cmi")
                           )
                       )
                     )
               )
           );
-          let cmi = rel dir::buildDir (namespacedName' ^ ".cmi");
-          let cmo = rel dir::buildDir (namespacedName' ^ ".cmo");
-          let cmt = rel dir::buildDir (namespacedName' ^ ".cmt");
+          let cmi = Path.relative dir::buildDir (namespacedName' ^ ".cmi");
+          let cmo = Path.relative dir::buildDir (namespacedName' ^ ".cmo");
+          let cmt = Path.relative dir::buildDir (namespacedName' ^ ".cmt");
           let deps = Dep.all_unit [
             Dep.path path,
             moduleAliasDep "cmi",
@@ -449,11 +391,11 @@ let compileSourcesScheme
               ""
             } else {
               "-package " ^ (
-                thirdPartyOcamlfindLibNames |> List.map f::tsl |> String.concat sep::","
+                thirdPartyOcamlfindLibNames |> List.map f::Utils.tsl |> String.concat sep::","
               )
             };
           let action =
-            bashf
+            Utils.bashf
               /* Most of the flags here have been explained previously in `moduleAliasFileScheme`.
                  -intf-suffix: tells ocamlc what the interface file's extension is.
 
@@ -475,16 +417,21 @@ let compileSourcesScheme
                 }
               )
               ocamlfindPackagesStr
-              (tsm (libToModule libName))
-              (ts buildDir)
+              (Utils.tsm (Utils.libToModule libName))
+              (Path.to_string buildDir)
               (
                 List.map
-                  thirdPartyNpmLibs f::(fun (Lib name) => "-I " ^ ts (rel dir::buildDirRoot name)) |>
+                  thirdPartyNpmLibs
+                  f::(
+                    fun libName =>
+                      "-I " ^
+                      Path.to_string (Path.relative dir::Utils.buildDirRoot (Utils.tsl libName))
+                  ) |>
                 String.concat sep::" "
               )
-              (ts (rel dir::buildDir namespacedName'))
-              (ts path);
-          Rule.create targets::targets (mapD deps (fun () => action))
+              (Path.to_string (Path.relative dir::buildDir namespacedName'))
+              (Path.to_string path);
+          Rule.create targets::targets (Dep.map deps (fun () => action))
         }
       );
   Scheme.rules_dep (Dep.all (List.map sourcePaths f::compileEachSourcePath))
@@ -502,22 +449,25 @@ let compileSourcesScheme
    them in that order to the ocamlc command (this logic is in `finalOutputsScheme` below). Still tedious, but
    at least we're not passing individual source files in order. */
 let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName buildDir::buildDir => {
-  let moduleName = tsm (libToModule libName);
-  let cmaPath = rel dir::buildDir libraryFileName;
-  let moduleAliasCmoPath = rel dir::buildDir (moduleName ^ ".cmo");
+  let moduleName = Utils.tsm (Utils.libToModule libName);
+  let cmaPath = Path.relative dir::buildDir libraryFileName;
+  let moduleAliasCmoPath = Path.relative dir::buildDir (moduleName ^ ".cmo");
   let cmos =
     List.map
       /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
       sortedSourcePaths
-      f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ ".cmo"));
-  let cmosString = List.map cmos f::ts |> String.concat sep::" ";
+      f::(
+        fun path =>
+          Path.relative dir::buildDir (Utils.namespacedName libName::libName path::path ^ ".cmo")
+      );
+  let cmosString = List.map cmos f::Path.to_string |> String.concat sep::" ";
   /* Final bundling. Time to get all the transitive dependencies... */
   Scheme.rules [
     Rule.simple
       targets::[cmaPath]
       deps::(List.map [moduleAliasCmoPath, ...cmos] f::Dep.path)
       action::(
-        bashf
+        Utils.bashf
           /* Flags:
              -open: compile the file as if [file being opened] was opened at the top of the file. In
              our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
@@ -530,8 +480,8 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
           /* Example command: ocamlc -g -open Foo -a -o lib.cma foo.cmo aDependsOnMe.cmo a.cmo b.cmo */
           "ocamlc -g -open %s -a -o %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
           moduleName
-          (ts cmaPath)
-          (ts moduleAliasCmoPath)
+          (Path.to_string cmaPath)
+          (Path.to_string moduleAliasCmoPath)
           cmosString
       )
   ]
@@ -542,29 +492,38 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
    files, we've already mingled in the correctly jsoo search paths in ocamlc to make this final compilation
    work. */
 let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
-  let buildDir = rel dir::buildDirRoot (tsl topLibName);
-  let moduleAliasCmoPath = rel dir::buildDir (tsm (libToModule topLibName) ^ ".cmo");
+  let buildDir = Path.relative dir::Utils.buildDirRoot (Utils.tsl Utils.topLibName);
+  let moduleAliasCmoPath =
+    Path.relative dir::buildDir (Utils.tsm (Utils.libToModule Utils.topLibName) ^ ".cmo");
   let cmos =
     List.map
       /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
       sortedSourcePaths
-      f::(fun path => rel dir::buildDir (namespacedName libName::topLibName path::path ^ ".cmo"));
-  let cmosString = List.map cmos f::ts |> String.concat sep::" ";
+      f::(
+        fun path =>
+          Path.relative
+            dir::buildDir (Utils.namespacedName libName::Utils.topLibName path::path ^ ".cmo")
+      );
+  let cmosString = List.map cmos f::Path.to_string |> String.concat sep::" ";
   let transitiveCmaPaths =
     List.map
       (sortedTransitiveThirdPartyNpmLibsIncludingSelf's ())
-      f::(fun (Lib name) => rel dir::(rel dir::buildDirRoot name) libraryFileName);
+      f::(
+        fun libName =>
+          Path.relative
+            dir::(Path.relative dir::Utils.buildDirRoot (Utils.tsl libName)) libraryFileName
+      );
   let ocamlfindPackagesStr =
     if (transitiveThirdPartyOcamlfindLibsIncludingSelf's () == []) {
       ""
     } else {
       "-linkpkg -package " ^ (
-        List.map (transitiveThirdPartyOcamlfindLibsIncludingSelf's ()) f::tsl |>
+        List.map (transitiveThirdPartyOcamlfindLibsIncludingSelf's ()) f::Utils.tsl |>
         String.concat sep::","
       )
     };
   let action =
-    bashf
+    Utils.bashf
       /* For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
          the module invokes some jsoo's Js module-related stuff. */
       /* Example command: ocamlc -g -I path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma \
@@ -581,10 +540,10 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
          */
       "ocamlfind ocamlc %s -g -open %s -o %s %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
       ocamlfindPackagesStr
-      (tsm (libToModule topLibName))
-      (ts binaryOutput)
-      (transitiveCmaPaths |> List.map f::ts |> String.concat sep::" ")
-      (ts moduleAliasCmoPath)
+      (Utils.tsm (Utils.libToModule Utils.topLibName))
+      (Path.to_string binaryOutput)
+      (transitiveCmaPaths |> List.map f::Path.to_string |> String.concat sep::" ")
+      (Path.to_string moduleAliasCmoPath)
       cmosString;
   let nativeRule =
     /* We check here for jsoo because jsoo needs binaryOutput */
@@ -606,12 +565,12 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
           targets::[jsOutput]
           deps::[Dep.path binaryOutput]
           action::(
-            bashf
+            Utils.bashf
               /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
                  output is still butt ugly. Just kidding I love you guys. */
               "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
-              (ts jsOutput)
-              (ts binaryOutput)
+              (Path.to_string jsOutput)
+              (Path.to_string binaryOutput)
           )
       ] :
       [];
@@ -625,13 +584,13 @@ let compileLibScheme
     srcDir::srcDir
     libName::libName
     buildDir::buildDir => Scheme.dep (
-  bindD
+  Dep.bind
     (Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}"))
     (
       fun unsortedPaths => {
         let sourceNotInterfacePaths =
-          List.filter unsortedPaths f::(fun path => not (isInterface path));
-        mapD
+          List.filter unsortedPaths f::(fun path => not (Utils.isInterface path));
+        Dep.map
           (sortPathsTopologically paths::unsortedPaths)
           (
             fun sortedPaths => Scheme.all [
@@ -658,7 +617,7 @@ let compileLibScheme
 
 /* See comment in the `sprintf` */
 let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir => {
-  let dotMerlinPath = rel dir::dir ".merlin";
+  let dotMerlinPath = Path.relative dir::dir ".merlin";
   let saveMerlinAction thirdPartyOcamlfindLibNames => {
     let dotMerlinContent =
       Printf.sprintf
@@ -666,7 +625,7 @@ let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir => {
 # [Merlin](https://github.com/the-lambda-church/merlin), a static analyser for
 # OCaml that provides autocompletion, jump-to-location, recoverable syntax
 # errors, type errors detection, etc., that your editor can use. To activate it,
-# one usually provides a .merlin file at the root of a project, describing where
+# one usually provides a .merlin file at the Path.the_root of a project, describing where
 # the sources and artifacts are. Since we dictated the project structure, we can
 # auto generate .merlin files!
 
@@ -695,16 +654,16 @@ PKG %s
 FLG -w -30 -w -40 -open %s
 |}
         (isTopLevelLib ? "S src" : "")
-        (Path.reach_from dir::dir (rel dir::nodeModulesRoot "**/src"))
-        (Path.reach_from dir::dir (rel dir::buildDirRoot "*"))
-        (thirdPartyOcamlfindLibNames |> List.map f::tsl |> String.concat sep::" ")
-        (tsm (libToModule libName));
+        (Path.reach_from dir::dir (Path.relative dir::Utils.nodeModulesRoot "**/src"))
+        (Path.reach_from dir::dir (Path.relative dir::Utils.buildDirRoot "*"))
+        (thirdPartyOcamlfindLibNames |> List.map f::Utils.tsl |> String.concat sep::" ")
+        (Utils.tsm (Utils.libToModule libName));
     Action.save dotMerlinContent target::dotMerlinPath
   };
   Scheme.rules [
     Rule.create
       targets::[dotMerlinPath]
-      (mapD (Dep.return (getThirdPartyOcamlfindLibs libDir::dir)) saveMerlinAction)
+      (Dep.map (Dep.return (getThirdPartyOcamlfindLibs libDir::dir)) saveMerlinAction)
   ]
 };
 
@@ -714,17 +673,21 @@ let scheme dir::dir => {
      the only case where we generate some artifacts outside of _build/. Most of this is so that Merlin's
      jump-to-location could work correctly when we jump into a third-party source file. As to why exactly we
      generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
-  if (dir == root) {
-    let packageJsonPath = rel dir::root "package.json";
+  if (List.mem backends "bucklescript") {
+    BsRules.bsScheme dir::dir
+  } else if (dir == Path.the_root) {
+    let packageJsonPath = Path.relative dir::Path.the_root "package.json";
     let dotMerlinDefaultScheme = Scheme.rules_dep (
-      mapD
-        (Dep.return (getThirdPartyNpmLibs libDir::root))
+      Dep.map
+        (Dep.return (getThirdPartyNpmLibs libDir::Path.the_root))
         (
           fun libs => {
             let thirdPartyRoots =
-              List.map libs f::(fun (Lib name) => rel dir::nodeModulesRoot name);
+              List.map
+                libs f::(fun name => Path.relative dir::Utils.nodeModulesRoot (Utils.tsl name));
             List.map
-              thirdPartyRoots f::(fun path => Rule.default dir::root [relD dir::path ".merlin"])
+              thirdPartyRoots
+              f::(fun path => Rule.default dir::Path.the_root [Utils.relD dir::path ".merlin"])
           }
         )
     );
@@ -735,25 +698,30 @@ let scheme dir::dir => {
       | _ => []
       };
     Scheme.all [
-      dotMerlinScheme isTopLevelLib::true dir::root libName::topLibName,
-      Scheme.rules [Rule.default dir::dir (defaultRule @ [relD dir::root ".merlin"])],
+      dotMerlinScheme isTopLevelLib::true dir::Path.the_root libName::Utils.topLibName,
+      Scheme.rules [
+        Rule.default dir::dir (defaultRule @ [Utils.relD dir::Path.the_root ".merlin"])
+      ],
       Scheme.exclude (fun path => path == packageJsonPath) dotMerlinDefaultScheme
     ]
   } else if (
-    Path.is_descendant dir::buildDirRoot dir
+    Path.is_descendant dir::Utils.buildDirRoot dir
   ) {
-    let libName = Lib (Path.basename dir);
+    let dirName = Path.basename dir;
+    let libName = Utils.Lib (Path.basename dir);
     let srcDir =
-      libName == topLibName ? topSrcDir : rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
+      libName == Utils.topLibName ?
+        Utils.topSrcDir :
+        Path.relative dir::(Path.relative dir::Utils.nodeModulesRoot dirName) "src";
     compileLibScheme
       srcDir::srcDir
-      isTopLevelLib::(libName == topLibName)
+      isTopLevelLib::(libName == Utils.topLibName)
       libName::libName
-      buildDir::(rel dir::buildDirRoot (tsl libName))
+      buildDir::(Path.relative dir::Utils.buildDirRoot dirName)
   } else if (
-    Path.dirname dir == nodeModulesRoot
+    Path.dirname dir == Utils.nodeModulesRoot
   ) {
-    let libName = Lib (Path.basename dir);
+    let libName = Utils.Lib (Path.basename dir);
     dotMerlinScheme isTopLevelLib::false dir::dir libName::libName
   } else {
     Scheme.no_rules
@@ -764,7 +732,7 @@ let env () => Env.create
   /* TODO: this doesn't traverse down to _build so I can't ask it to clean files there? */
   /* artifacts::(
        fun dir::dir => {
-         print_endline @@ (ts dir ^ "00000000000000000");
+         print_endline @@ (Path.to_string dir ^ "00000000000000000");
          /* if (dir == buildDir || Path.is_descendant dir::dir buildDir) {
            Dep.glob_listing (Glob.create dir::buildDir "*.cmi")
          } else { */

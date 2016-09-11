@@ -2,7 +2,7 @@
 # [Merlin](https://github.com/the-lambda-church/merlin), a static analyser for
 # OCaml that provides autocompletion, jump-to-location, recoverable syntax
 # errors, type errors detection, etc., that your editor can use. To activate it,
-# one usually provides a .merlin file at the root of a project, describing where
+# one usually provides a .merlin file at the Path.the_root of a project, describing where
 # the sources and artifacts are. Since we dictated the project structure, we can
 # auto generate .merlin files!
 
