@@ -63,15 +63,41 @@ let pathToModule path => Mod (fileNameNoExtNoDir path |> String.capitalize);
 let namespacedName libName::libName path::path =>
   tsm (libToModule libName) ^ "__" ^ tsm (pathToModule path);
 
-  let nodeModulesRoot = Path.relative dir::Path.the_root "node_modules";
+let nodeModulesRoot = Path.relative dir::Path.the_root "node_modules";
 
-  let buildDirRoot = Path.relative dir::Path.the_root "_build";
+let buildDirRoot = Path.relative dir::Path.the_root "_build";
 
-  let topSrcDir = Path.relative dir::Path.the_root "src";
+let topSrcDir = Path.relative dir::Path.the_root "src";
 
-  let topLibName = {
-    let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-    from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
-      fun name => Lib name
-    )
+let topLibName = {
+  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
+  from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
+    fun name => Lib name
+  )
+};
+
+/* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
+   sorted into [c, d, b, a] or [c, b, d, a], aka the ones being depended on will always come before the
+   dependent */
+let topologicalSort graph => {
+  let graph = {contents: graph};
+  let rec topologicalSort' currNode accum => {
+    let nodeDeps =
+      switch (List.Assoc.find graph.contents currNode) {
+      /* node not found: presume to be third-party dep. This is slightly dangerous because it might also mean
+         we didn't construct the graph correctly. */
+      | None => []
+      | Some nodeDeps' => nodeDeps'
+      };
+    List.iter nodeDeps f::(fun dep => topologicalSort' dep accum);
+    if (List.for_all accum.contents f::(fun n => n != currNode)) {
+      accum := [currNode, ...accum.contents];
+      graph := List.Assoc.remove graph.contents currNode
+    }
   };
+  let accum = {contents: []};
+  while (not (List.is_empty graph.contents)) {
+    topologicalSort' (fst (List.hd_exn graph.contents)) accum
+  };
+  List.rev accum.contents
+};

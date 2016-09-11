@@ -122,31 +122,6 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
   }
 };
 
-/* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
-   sorted into [c, d, b, a] or [c, b, d, a], aka the ones being depended on will always come before the
-   dependent */
-let topologicalSort graph => {
-  let graph = {contents: graph};
-  let rec topologicalSort' currNode accum => {
-    let nodeDeps =
-      switch (List.Assoc.find graph.contents currNode) {
-      /* node not found: presume to be third-party dep. This is slightly dangerous because it might also mean
-         we didn't construct the graph correctly. */
-      | None => []
-      | Some nodeDeps' => nodeDeps'
-      };
-    List.iter nodeDeps f::(fun dep => topologicalSort' dep accum);
-    if (List.for_all accum.contents f::(fun n => n != currNode)) {
-      accum := [currNode, ...accum.contents];
-      graph := List.Assoc.remove graph.contents currNode
-    }
-  };
-  let accum = {contents: []};
-  while (not (List.is_empty graph.contents)) {
-    topologicalSort' (fst (List.hd_exn graph.contents)) accum
-  };
-  List.rev accum.contents
-};
 
 /* Figure out the order in which third-party libs should be compiled, based on their dependencies (the
    depended is compiled before the dependent). */
@@ -163,7 +138,7 @@ let sortedTransitiveThirdPartyNpmLibsIncludingSelf's () => {
         }
       );
   /* `topologicalSort` will also return our own deps. */
-  topologicalSort thirdPartyDeps
+  Utils.topologicalSort thirdPartyDeps
 };
 
 let transitiveThirdPartyOcamlfindLibsIncludingSelf's () => {
@@ -192,7 +167,7 @@ let sortPathsTopologically paths::paths => {
     moduleDepsForPathsD
     (
       fun moduleDepsForPaths =>
-        List.zip_exn pathsAsModules moduleDepsForPaths |> topologicalSort |>
+        List.zip_exn pathsAsModules moduleDepsForPaths |> Utils.topologicalSort |>
         List.map f::(fun m => List.Assoc.find_exn pathsAsModulesOriginalCapitalization m)
     )
 };
@@ -709,13 +684,14 @@ let scheme dir::dir => {
   ) {
     let dirName = Path.basename dir;
     let libName = Utils.Lib (Path.basename dir);
+    let isTopLevelLib = libName == Utils.topLibName;
     let srcDir =
-      libName == Utils.topLibName ?
+      isTopLevelLib ?
         Utils.topSrcDir :
         Path.relative dir::(Path.relative dir::Utils.nodeModulesRoot dirName) "src";
     compileLibScheme
       srcDir::srcDir
-      isTopLevelLib::(libName == Utils.topLibName)
+      isTopLevelLib::isTopLevelLib
       libName::libName
       buildDir::(Path.relative dir::Utils.buildDirRoot dirName)
   } else if (
