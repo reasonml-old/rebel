@@ -2,9 +2,9 @@ open Core.Std;
 
 open Jenga_lib.Api;
 
-let bindD' f dep => Dep.bind dep f;
+let bindD f dep => Dep.bind dep f;
 
-let mapD' f dep => Dep.map dep f;
+let mapD f dep => Dep.map dep f;
 
 let jsOutput =
   Path.relative
@@ -21,7 +21,7 @@ let ocamlDep sourcePath::sourcePath => {
       "ocamldep -pp refmt -ppx node_modules/.bin/bsppx -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s 2>&1; (exit ${PIPESTATUS[0]})"
       flag
       (Path.to_string sourcePath);
-  let action = Dep.action_stdout (Dep.path sourcePath |> mapD' getDepAction);
+  let action = Dep.action_stdout (Dep.path sourcePath |> mapD getDepAction);
   let processRawString string =>
     switch (String.strip string |> String.split on::':') {
     | [original, deps] => (
@@ -38,10 +38,10 @@ let ocamlDep sourcePath::sourcePath => {
 let ocamlDepCurrentSources sourcePath::sourcePath => {
   let srcDir = Path.dirname sourcePath;
   ocamlDep sourcePath::sourcePath |>
-  bindD' (
+  bindD (
     fun (original, deps) =>
       Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}") |>
-      mapD' (
+      mapD (
         fun sourcePaths => {
           let originalModule = Utils.pathToModule original;
           /* Dedupe, because we might have foo.re and foo.rei */
@@ -57,6 +57,9 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
   )
 };
 
+/*
+   FIXME Unlike for native compilation, we don't need to perform name spacing magic here. Correct?
+ */
 let compileSourcesScheme
     libDir::libDir
     buildDir::buildDir
@@ -64,7 +67,7 @@ let compileSourcesScheme
     sourcePaths::sourcePaths => {
   let compilePathScheme path =>
     ocamlDepCurrentSources sourcePath::path |>
-    mapD' (
+    mapD (
       fun firstPartyDeps => {
         /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
            to recompile the dependent modules. Win. */
@@ -100,11 +103,11 @@ let compileSourcesScheme
           } else {
             firstPartyCmisDeps
           };
-        let fileName ext::ext => Path.relative dir::buildDir (Utils.fileNameNoExtNoDir path ^ ext);
-        let jsp = fileName ".js";
-        let cmi = fileName ".cmi";
-        let cmj = fileName ".cmj";
-        let cmt = fileName ".cmt";
+        let name ext::ext => Path.relative dir::buildDir (Utils.fileNameNoExtNoDir path ^ ext);
+        let jsp = name ".js";
+        let cmi = name ".cmi";
+        let cmj = name ".cmj";
+        let cmt = name ".cmt";
         let action =
           Utils.bashf
             /*
@@ -132,7 +135,7 @@ let compileLibScheme
     srcDir::srcDir
     buildDir::buildDir =>
   Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}") |>
-  mapD' (
+  mapD (
     fun unsortedPaths =>
       /* List.iter unsortedPaths f::(fun x => print_endline (Utils.tsp x)); */
       compileSourcesScheme
@@ -142,7 +145,7 @@ let compileLibScheme
         sourcePaths::unsortedPaths
   ) |> Scheme.dep;
 
-let bsScheme dir::dir =>
+let scheme dir::dir =>
   if (dir == Path.the_root) {
     Scheme.all [Scheme.rules [Rule.default dir::dir [Dep.path jsOutput]]]
   } else if (

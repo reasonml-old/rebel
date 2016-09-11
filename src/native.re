@@ -12,19 +12,7 @@ open Jenga_lib.Api;
 
 let libraryFileName = "lib.cma";
 
-let backends = {
-  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-  let backends' =
-    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
-    Util.to_option (fun a => a |> Util.member "backend");
-  switch backends' {
-  | Some (`List _ as a) => List.map f::Util.to_string (Util.to_list a)
-  | None => ["native", "jsoo"]
-  | _ => []
-  }
-};
-
-/* Is this style Ok? */
+/* FIXME Is this style Ok? */
 let binaryOutput =
   Utils.(Path.relative dir::(Path.relative dir::buildDirRoot (tsl topLibName)) "app.out");
 
@@ -83,73 +71,6 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
             }
           )
     )
-};
-
-let isDirRebelCampatible libDir::libDir => {
-  let packageJsonPath = Path.relative dir::libDir "package.json";
-  [from_file (Path.to_string packageJsonPath)] |> Util.filter_member "rebel" |> List.length != 0
-};
-
-let withRebelCompatibleLibs =
-  List.filter
-    f::(
-      fun lib =>
-        isDirRebelCampatible libDir::(Path.relative dir::Utils.nodeModulesRoot (Utils.tsl lib))
-    );
-
-/* Simply read into the package.json "dependencies" field. */
-let getThirdPartyNpmLibs libDir::libDir => {
-  let packageJsonPath = Path.relative dir::libDir "package.json";
-  let deps =
-    [from_file (Path.to_string packageJsonPath)] |> Util.filter_member "dependencies" |> Util.filter_assoc;
-  let libs =
-    switch deps {
-    | [x] => x |> List.map f::fst |> List.map f::(fun name => Utils.Lib name)
-    | _ => []
-    };
-  withRebelCompatibleLibs libs
-};
-
-/* Simply read into the package.json "rebel.ocamlfindDependencies" field. */
-let getThirdPartyOcamlfindLibs libDir::libDir => {
-  let packageJsonPath = Path.relative dir::libDir "package.json";
-  let deps =
-    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
-    Util.to_option (fun a => a |> Util.member "ocamlfindDependencies");
-  switch deps {
-  | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Utils.Lib name)
-  | _ => []
-  }
-};
-
-/* Figure out the order in which third-party libs should be compiled, based on their dependencies (the
-   depended is compiled before the dependent). */
-let sortedTransitiveThirdPartyNpmLibsIncludingSelf's () => {
-  let thirdPartyLibs = getThirdPartyNpmLibs libDir::Path.the_root;
-  let thirdPartyDeps =
-    List.map
-      thirdPartyLibs
-      f::(
-        fun name => {
-          /* third party's own third party libs */
-          let libDir = Path.relative dir::Utils.nodeModulesRoot (Utils.tsl name);
-          (name, getThirdPartyNpmLibs libDir::libDir)
-        }
-      );
-  /* `topologicalSort` will also return our own deps. */
-  Utils.topologicalSort thirdPartyDeps
-};
-
-let transitiveThirdPartyOcamlfindLibsIncludingSelf's () => {
-  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::Path.the_root;
-  let thirdPartyOcamlfindLibs = getThirdPartyOcamlfindLibs libDir::Path.the_root;
-  let thirdPartyLibDirs =
-    List.map
-      thirdPartyNpmLibs f::(fun name => Path.relative dir::Utils.nodeModulesRoot (Utils.tsl name));
-  /* each third party's own third party libs */
-  let thirdPartiesThirdPartyOcamlfindLibNamesD =
-    List.map thirdPartyLibDirs f::(fun libDir => getThirdPartyOcamlfindLibs libDir::libDir);
-  thirdPartyOcamlfindLibs @ List.concat thirdPartiesThirdPartyOcamlfindLibNamesD |> List.dedup
 };
 
 /* Used to compile a library file. The compile command requires files to be passed in order. If A requires B
@@ -259,8 +180,8 @@ let compileSourcesScheme
       (ocamlDepCurrentSources sourcePath::path)
       (
         fun firstPartyDeps => {
-          let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::libDir;
-          let thirdPartyOcamlfindLibNames = getThirdPartyOcamlfindLibs libDir::libDir;
+          let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
+          let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
           let isInterface' = Utils.isInterface path;
           let hasInterface =
             not isInterface' &&
@@ -466,6 +387,7 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
    files, we've already mingled in the correctly jsoo search paths in ocamlc to make this final compilation
    work. */
 let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
+  let backends = Utils.backends;
   let buildDir = Path.relative dir::Utils.buildDirRoot (Utils.tsl Utils.topLibName);
   let moduleAliasCmoPath =
     Path.relative dir::buildDir (Utils.tsm (Utils.libToModule Utils.topLibName) ^ ".cmo");
@@ -481,18 +403,18 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
   let cmosString = List.map cmos f::Path.to_string |> String.concat sep::" ";
   let transitiveCmaPaths =
     List.map
-      (sortedTransitiveThirdPartyNpmLibsIncludingSelf's ())
+      (NpmDep.sortedTransitiveThirdPartyNpmLibsIncludingSelf's)
       f::(
         fun libName =>
           Path.relative
             dir::(Path.relative dir::Utils.buildDirRoot (Utils.tsl libName)) libraryFileName
       );
   let ocamlfindPackagesStr =
-    if (transitiveThirdPartyOcamlfindLibsIncludingSelf's () == []) {
+    if (NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
       ""
     } else {
       "-linkpkg -package " ^ (
-        List.map (transitiveThirdPartyOcamlfindLibsIncludingSelf's ()) f::Utils.tsl |>
+        List.map (NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's) f::Utils.tsl |>
         String.concat sep::","
       )
     };
@@ -637,31 +559,30 @@ FLG -w -30 -w -40 -open %s
   Scheme.rules [
     Rule.create
       targets::[dotMerlinPath]
-      (Dep.map (Dep.return (getThirdPartyOcamlfindLibs libDir::dir)) saveMerlinAction)
+      (Dep.map (Dep.return (NpmDep.getThirdPartyOcamlfindLibs libDir::dir)) saveMerlinAction)
   ]
 };
 
 let scheme dir::dir => {
+  open Utils;
   ignore dir;
   /* We generate many .merlin files, one per third-party library (and on at the top). Additionally, this is
      the only case where we generate some artifacts outside of _build/. Most of this is so that Merlin's
      jump-to-location could work correctly when we jump into a third-party source file. As to why exactly we
      generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
-  if (List.mem backends "bucklescript") {
-    BsRules.bsScheme dir::dir
-  } else if (dir == Path.the_root) {
+  if (dir == Path.the_root) {
     let packageJsonPath = Path.relative dir::Path.the_root "package.json";
     let dotMerlinDefaultScheme = Scheme.rules_dep (
       Dep.map
-        (Dep.return (getThirdPartyNpmLibs libDir::Path.the_root))
+        (Dep.return (NpmDep.getThirdPartyNpmLibs libDir::Path.the_root))
         (
           fun libs => {
             let thirdPartyRoots =
               List.map
-                libs f::(fun name => Path.relative dir::Utils.nodeModulesRoot (Utils.tsl name));
+                libs f::(fun name => Path.relative dir::nodeModulesRoot (tsl name));
             List.map
               thirdPartyRoots
-              f::(fun path => Rule.default dir::Path.the_root [Utils.relD dir::path ".merlin"])
+              f::(fun path => Rule.default dir::Path.the_root [relD dir::path ".merlin"])
           }
         )
     );
@@ -672,48 +593,33 @@ let scheme dir::dir => {
       | _ => []
       };
     Scheme.all [
-      dotMerlinScheme isTopLevelLib::true dir::Path.the_root libName::Utils.topLibName,
+      dotMerlinScheme isTopLevelLib::true dir::Path.the_root libName::topLibName,
       Scheme.rules [
-        Rule.default dir::dir (defaultRule @ [Utils.relD dir::Path.the_root ".merlin"])
+        Rule.default dir::dir (defaultRule @ [relD dir::Path.the_root ".merlin"])
       ],
       Scheme.exclude (fun path => path == packageJsonPath) dotMerlinDefaultScheme
     ]
   } else if (
-    Path.is_descendant dir::Utils.buildDirRoot dir
+    Path.is_descendant dir::buildDirRoot dir
   ) {
     let dirName = Path.basename dir;
-    let libName = Utils.Lib (Path.basename dir);
-    let isTopLevelLib = libName == Utils.topLibName;
+    let libName = Lib (Path.basename dir);
+    let isTopLevelLib = libName == topLibName;
     let srcDir =
       isTopLevelLib ?
-        Utils.topSrcDir :
-        Path.relative dir::(Path.relative dir::Utils.nodeModulesRoot dirName) "src";
+        topSrcDir :
+        Path.relative dir::(Path.relative dir::nodeModulesRoot dirName) "src";
     compileLibScheme
       srcDir::srcDir
       isTopLevelLib::isTopLevelLib
       libName::libName
-      buildDir::(Path.relative dir::Utils.buildDirRoot dirName)
+      buildDir::(Path.relative dir::buildDirRoot dirName)
   } else if (
-    Path.dirname dir == Utils.nodeModulesRoot
+    Path.dirname dir == nodeModulesRoot
   ) {
-    let libName = Utils.Lib (Path.basename dir);
+    let libName = Lib (Path.basename dir);
     dotMerlinScheme isTopLevelLib::false dir::dir libName::libName
   } else {
     Scheme.no_rules
   }
 };
-
-let env () => Env.create
-  /* TODO: this doesn't traverse down to _build so I can't ask it to clean files there? */
-  /* artifacts::(
-       fun dir::dir => {
-         print_endline @@ (Path.to_string dir ^ "00000000000000000");
-         /* if (dir == buildDir || Path.is_descendant dir::dir buildDir) {
-           Dep.glob_listing (Glob.create dir::buildDir "*.cmi")
-         } else { */
-           Dep.return []
-         /* } */
-       }
-     ) */
-  scheme;
-/* let setup () => Deferred.return env; */

@@ -1,7 +1,7 @@
 # Convert reason files to ocaml files
 # TODO probably should use a for loop
 
-FILES="utils rules bsRules rebel"
+FILES="utils setup rules bucklescript rebel npmDep native"
 
 for file in $FILES
 do

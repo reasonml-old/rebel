@@ -490,6 +490,6 @@ let () =
     run::(
       fun config => {
         let root_dir = find_ancestor_directory_containing one_of::root_markers |> ok_exn;
-        Run.main' root_dir::root_dir (Env Rules.env) config
+        Run.main' root_dir::root_dir (Env Setup.env) config
       }
     );

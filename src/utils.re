@@ -101,3 +101,15 @@ let topologicalSort graph => {
   };
   List.rev accum.contents
 };
+
+let backends = {
+  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
+  let backends' =
+    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
+    Util.to_option (fun a => a |> Util.member "backend");
+  switch backends' {
+  | Some (`List _ as a) => List.map f::Util.to_string (Util.to_list a)
+  | None => ["native", "jsoo"]
+  | _ => []
+  }
+};
