@@ -122,7 +122,6 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
   }
 };
 
-
 /* Figure out the order in which third-party libs should be compiled, based on their dependencies (the
    depended is compiled before the dependent). */
 let sortedTransitiveThirdPartyNpmLibsIncludingSelf's () => {
@@ -275,8 +274,8 @@ let compileSourcesScheme
           /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
              to recompile the dependent modules. Win. */
           let firstPartyCmisDeps =
+            sourcePaths |>
             List.filter
-              sourcePaths
               f::(
                 fun path => {
                   let pathAsModule = Utils.pathToModule path;
