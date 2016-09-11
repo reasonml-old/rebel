@@ -65,64 +65,99 @@ let compileSourcesScheme
     buildDir::buildDir
     libName::libName
     sourcePaths::sourcePaths => {
+  open Utils;
   let compilePathScheme path =>
     ocamlDepCurrentSources sourcePath::path |>
     mapD (
       fun firstPartyDeps => {
         /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
            to recompile the dependent modules. Win. */
-        let isInterface' = Utils.isInterface path;
+        let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
+        /* TODO Add Ocaml Find Dep support */
+        let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
+        let isInterface' = isInterface path;
         let hasInterface =
           not isInterface' &&
           List.exists
             sourcePaths
             f::(
-              fun path' =>
-                Utils.isInterface path' &&
-                Utils.fileNameNoExtNoDir path' == Utils.fileNameNoExtNoDir path
+              fun path' => isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path
             );
         let firstPartyCmisDeps =
           sourcePaths |>
           List.filter
             f::(
               fun path => {
-                let pathAsModule = Utils.pathToModule path;
+                let pathAsModule = pathToModule path;
                 List.exists firstPartyDeps f::(fun m => m == pathAsModule)
               }
             ) |>
-          List.map
-            f::(fun path => Utils.relD dir::buildDir (Utils.fileNameNoExtNoDir path ^ ".cmi"));
+          List.map f::(fun path => relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmi"));
         let firstPartyCmisDeps =
           if (not isInterface' && hasInterface) {
             [
               /* We're a source file with an interface; include our own cmi as a dependency (our interface
                  file should be compile before ourselves). */
-              Utils.relD dir::buildDir (Utils.fileNameNoExtNoDir path ^ ".cmi"),
+              relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmi"),
               ...firstPartyCmisDeps
             ]
           } else {
             firstPartyCmisDeps
           };
-        let name ext::ext => Path.relative dir::buildDir (Utils.fileNameNoExtNoDir path ^ ext);
+        /* Compiling the current source file depends on all of the cmis of all its third-party libraries'
+           source files being compiled. This is very coarse since in reality, we only depend on a few source
+           files of these third-party libs. But ocamldep isn't granular enough to give us this information
+           yet. */
+        let thirdPartiesCmisDep = Dep.all_unit (
+          List.map
+            thirdPartyNpmLibs
+            f::(
+              fun libName => {
+                /* if one of a third party library foo's source is Hi.re, then it resides in
+                   `node_modules/foo/src/Hi.re`, and its cmi artifacts in `_build/foo/Hi.cmi` */
+                let thirdPartySrcPath =
+                  Path.relative dir::(Path.relative dir::nodeModulesRoot (tsl libName)) "src";
+                /* No need to glob `.rei/.mli`s here. We're only getting the file names to
+                   construct cmi paths. */
+                Dep.glob_listing (Glob.create dir::thirdPartySrcPath "*.{re,ml}") |>
+                bindD (
+                  fun thirdPartySources => Dep.all_unit (
+                    List.map
+                      thirdPartySources
+                      f::(
+                        fun sourcePath =>
+                          relD
+                            dir::(Path.relative dir::buildDirRoot (tsl libName))
+                            (fileNameNoExtNoDir sourcePath ^ ".cmi")
+                      )
+                  )
+                )
+              }
+            )
+        );
+        let name ext::ext => Path.relative dir::buildDir (fileNameNoExtNoDir path ^ ext);
         let jsp = name ".js";
         let cmi = name ".cmi";
         let cmj = name ".cmj";
         let cmt = name ".cmt";
+        let includeDir =
+          thirdPartyNpmLibs |> List.map f::(fun libName => "-I _build/" ^ tsl libName) |>
+          String.concat sep::" ";
         let action =
-          Utils.bashf
+          bashf
             /*
                 More Flags:
                -bs-package-output  set npm-output-path: [opt_module]:path, for example: 'lib/cjs', 'amdjs:lib/amdjs' and 'goog:lib/gjs'
 
                -bs-package-name is set `self` to that it produces right require calls.
              */
-            "bsc -g -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s -I %s -o %s -c -impl %s"
-            (Utils.tsp buildDir)
-            (Utils.tsp buildDir)
-            (Utils.tsp jsp)
-            (Utils.tsp path);
+            "bsc -g -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s -o %s -c -impl %s"
+            (tsp buildDir)
+            (includeDir ^ " -I " ^ tsp buildDir)
+            (tsp jsp)
+            (tsp path);
         let targets = [cmi, cmj, cmt, jsp];
-        let deps = Dep.all_unit firstPartyCmisDeps;
+        let deps = Dep.all_unit [Dep.path path, thirdPartiesCmisDep, ...firstPartyCmisDeps];
         Rule.create targets::targets (Dep.map deps (fun () => action))
       }
     );

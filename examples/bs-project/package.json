@@ -15,6 +15,7 @@
     ]
   },
   "dependencies": {
+    "Rexpress": "github:vramana/Rexpress"
   },
   "devDependencies": {
     "bs-platform": "^1.0.1"
