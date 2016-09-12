@@ -12,7 +12,7 @@ let mapD f dep => Dep.map dep f;
 
 let jsOutput =
   Path.relative
-    dir::(Path.relative dir::Utils.buildDirRoot (Utils.tsl Utils.topLibName)) "Index.js";
+    dir::(Path.relative dir::Utils.buildDirRoot (Utils.tsl Utils.topLibName)) "index.js";
 
 /* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module

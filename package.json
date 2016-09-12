@@ -6,6 +6,7 @@
   "dependencies": {
     "dependency-env": "https://github.com/npm-ml/dependency-env.git",
     "nopam": "https://github.com/yunxing/nopam.git",
+    "ocamlfind": "https://github.com/npm-opam/ocamlfind",
     "yojson": "https://github.com/npm-opam/yojson",
     "jenga": "https://github.com/npm-opam/jenga"
   },
