@@ -132,9 +132,7 @@ let moduleAliasFileScheme
   Scheme.rules [contentRule, compileRule]
 };
 
-/*
-   We perform name spacing magic for only dependencies.
- */
+/* We perform name spacing magic for only dependencies.*/
 let compileSourcesScheme
     libDir::libDir
     buildDir::buildDir
@@ -142,17 +140,21 @@ let compileSourcesScheme
     sourcePaths::sourcePaths
     isTopLevelLib::isTopLevelLib => {
   open Utils;
-  /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
-     to recompile the dependent modules. Win. */
+
+  /** compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
+      to recompile the dependent modules. Win. */
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
-  /* TODO Add Ocaml Find Dep support */
+
+  /** TODO Add Ocaml Find Dep support */
   let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
-  /* Compute Module Alias dependencies for dependencies only */
+
+  /** Compute Module Alias dependencies for dependencies only */
   let moduleAliasDep = Dep.all_unit (
     (isTopLevelLib ? [] : ["cmi", "cmj", "cmt", "ml"]) |>
     List.map f::(fun extension => relD dir::buildDir (tsm (libToModule libName) ^ "." ^ extension))
   );
-  /* Compute build graph (targets, dependencies) for the current path */
+
+  /** Compute build graph (targets, dependencies) for the current path */
   let compilePathScheme path =>
     ocamlDepCurrentSources sourcePath::path |>
     mapD (
@@ -186,11 +188,12 @@ let compileSourcesScheme
           } else {
             firstPartyCmisDeps
           };
-        /* Compiling the current source file depends on all of the cmis of all its third-party libraries'
-           source files being compiled. This is very coarse since in reality, we only depend on a few source
-           files of these third-party libs. But ocamldep isn't granular enough to give us this information
-           yet. */
-        let thirdPartiesCmisDep = Dep.all_unit (
+
+        /** Compiling the current source file depends on all of the cmis of all its third-party libraries'
+            source files being compiled. This is very coarse since in reality, we only depend on a few source
+            files of these third-party libs. But ocamldep isn't granular enough to give us this information
+            yet. */
+        let thirdPartiesJsAndCmisDep = Dep.all_unit (
           List.map
             thirdPartyNpmLibs
             f::(
@@ -211,16 +214,23 @@ let compileSourcesScheme
                           relD
                             dir::(Path.relative dir::buildDirRoot (tsl libName))
                             (namespacedName libName::libName path::sourcePath ^ ".cmi")
+                      ) @
+                    List.map
+                      thirdPartySources
+                      f::(
+                        fun sourcePath =>
+                          relD
+                            dir::(Path.relative dir::buildDirRoot (tsl libName))
+                            (bsNamespacedName libName::libName path::sourcePath ^ ".js")
                       )
                   )
                 )
               }
             )
         );
-        let namespacedName ext::ext =>
+        let namespacedPath ext::ext =>
           Path.relative dir::buildDir (namespacedName libName::libName path::path ^ ext);
-        let name ext::ext => Path.relative dir::buildDir (fileNameNoExtNoDir path ^ ext);
-        print_endline (tsp (name ".cmi"));
+        let simplePath ext::ext => Path.relative dir::buildDir (fileNameNoExtNoDir path ^ ext);
         let includeDir =
           thirdPartyNpmLibs |> List.map f::(fun libName => "-I _build/" ^ tsl libName) |>
           String.concat sep::" ";
@@ -236,22 +246,43 @@ let compileSourcesScheme
             (tsp buildDir)
             (isTopLevelLib ? "" : "-open " ^ tsm (libToModule libName))
             (includeDir ^ " -I " ^ tsp buildDir)
-            (isTopLevelLib ? tsp (name ".js") : tsp (namespacedName ".js"))
+            (isTopLevelLib ? tsp (simplePath "") : tsp (namespacedPath ""))
             (tsp path);
+        print_endline (namespacedName libName::libName path::path);
+        print_endline (tsp (simplePath ""));
+        print_endline (tsp (namespacedPath ".js"));
         let targets =
           isTopLevelLib ?
-            [name ".cmi", name ".cmj", name ".cmt", name ".js"] :
-            [namespacedName ".cmi", namespacedName ".cmj", namespacedName ".cmt", name ".js"];
+            [simplePath ".cmi", simplePath ".cmj", simplePath ".cmt", simplePath ".js"] :
+            [namespacedPath ".cmi", namespacedPath ".cmj", namespacedPath ".cmt", simplePath ".js"];
         let deps = Dep.all_unit [
           Dep.path path,
-          thirdPartiesCmisDep,
+          thirdPartiesJsAndCmisDep,
           moduleAliasDep,
           ...firstPartyCmisDeps
         ];
-        Rule.create targets::targets (Dep.map deps (fun () => action))
+
+        /** Workaround for BuckleScript bug https://github.com/bloomberg/bucklescript/issues/757  */
+        let copyTarget = Path.relative dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
+        let copyAction =
+          bashf
+            "cp %s %s"
+            (tsp (simplePath ".js"))
+            (
+              tsp copyTarget
+            );
+        let copyRule =
+          Rule.create
+            targets::[copyTarget] (Dep.path (simplePath ".js") |> mapD (fun () => copyAction));
+
+        /** Compile JS from BuckleScript and copy the file to match require call */
+        Scheme.all [
+          Scheme.rules [Rule.create targets::targets (Dep.map deps (fun () => action))],
+          isTopLevelLib ? Scheme.no_rules : Scheme.rules [copyRule]
+        ]
       }
     );
-  Scheme.rules_dep (Dep.all (List.map sourcePaths f::compilePathScheme))
+  Scheme.all (List.map sourcePaths f::(fun path => compilePathScheme path |> Scheme.dep))
 };
 
 let compileLibScheme

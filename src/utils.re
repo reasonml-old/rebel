@@ -1,3 +1,7 @@
+/*
+ * vim: set ft=rust:
+ * vim: set ft=reason:
+ */
 open Core.Std;
 
 open Jenga_lib.Api;
@@ -5,7 +9,6 @@ open Jenga_lib.Api;
 open Yojson.Basic;
 
 /* general helpers */
-
 let bash command => Action.process dir::Path.the_root prog::"bash" args::["-c", command] ();
 
 let bashf fmt => ksprintf bash fmt;
@@ -29,7 +32,6 @@ let isInterface path => {
 };
 
 /* this rebel-specific helpers */
-
 type moduleName =
   | Mod string;
 
@@ -62,6 +64,25 @@ let pathToModule path => Mod (fileNameNoExtNoDir path |> String.capitalize);
 
 let namespacedName libName::libName path::path =>
   tsm (libToModule libName) ^ "__" ^ tsm (pathToModule path);
+
+/** FIXME Remove after https://github.com/bloomberg/bucklescript/issues/757 is fixed */
+let bsNamespacedName libName::libName path::path => {
+  let bsKebabToCamel =
+    String.foldi
+      init::""
+      f::(
+        fun _ accum char =>
+          if (accum == "") {
+            Char.to_string char |> String.lowercase
+          } else if (accum.[String.length accum - 1] == '-') {
+            String.slice accum 0 (-1) ^ (Char.to_string char |> String.capitalize)
+          } else {
+            accum ^ Char.to_string char
+          }
+      );
+  let bsLibToModule (Lib name) => Mod (String.capitalize name |> bsKebabToCamel);
+  tsm (bsLibToModule libName) ^ "__" ^ tsm (pathToModule path);
+};
 
 let nodeModulesRoot = Path.relative dir::Path.the_root "node_modules";
 
