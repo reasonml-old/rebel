@@ -16,8 +16,8 @@
   "license": "ISC",
   "name": "rebel",
   "scripts": {
-    "rebel:re": "./rebel.sh examples/reason-project",
-    "rebel:bs": "./rebel.sh examples/bs-project",
+    "rebel:re": "npm run rebel && ./rebel.sh examples/reason-project",
+    "rebel:bs": "npm run rebel && ./rebel.sh examples/bs-project",
     "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh"
   },
   "version": "0.0.23"

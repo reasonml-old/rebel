@@ -276,9 +276,9 @@ let compileSourcesScheme
             targets::[copyTarget] (Dep.path (simplePath ".js") |> mapD (fun () => copyAction));
 
         /** Compile JS from BuckleScript and copy the file to match require call */
-        Scheme.all [
-          Scheme.rules [Rule.create targets::targets (Dep.map deps (fun () => action))],
-          isTopLevelLib ? Scheme.no_rules : Scheme.rules [copyRule]
+        Scheme.rules [
+           Rule.create targets::targets (Dep.map deps (fun () => action)),
+           ...isTopLevelLib ? [] : [copyRule]
         ]
       }
     );
