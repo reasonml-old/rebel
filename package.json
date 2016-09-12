@@ -4,6 +4,7 @@
     "run": "run"
   },
   "dependencies": {
+    "reason": "https://github.com/facebook/reason",
     "dependency-env": "https://github.com/npm-ml/dependency-env.git",
     "nopam": "https://github.com/yunxing/nopam.git",
     "ocamlfind": "https://github.com/npm-opam/ocamlfind",
@@ -17,7 +18,7 @@
   "scripts": {
     "rebel:re": "./rebel.sh examples/reason-project",
     "rebel:bs": "./rebel.sh examples/bs-project",
-    "rebel": "eval $(dependencyEnv) && nopam && ./configure --prefix $opam_prefix && make"
+    "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh"
   },
   "version": "0.0.23"
 }
