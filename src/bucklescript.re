@@ -1,3 +1,7 @@
+/*
+ * vim: set ft=rust:
+ * vim: set ft=reason:
+ */
 open Core.Std;
 
 open Jenga_lib.Api;
@@ -55,6 +59,77 @@ let ocamlDepCurrentSources sourcePath::sourcePath => {
         }
       )
   )
+};
+
+/* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
+   into a foo.ml file whose content is:
+   module A = Foo__A;
+   module B = Foo__B;
+
+   We'll then compile this file into foo.cmi/cmo/cmt, and have it opened by default when compiling A.re and
+   B.re (into foo_A and foo_B respectively) later. The effect is that, inside A.re, we can refer to B instead
+   of Foo__B thanks to the pre-opened foo.ml. But when these files are used by other libraries (which aren't
+   compiled with foo.re pre-opened of course), they won't see module A or B, only Foo__A and Foo__B, aka in
+   practice, they simply won't see them. This effectively means we've implemented namespacing!
+
+   Note that we're generating a ml file rather than re, because this rebel theoretically works on pure
+   ocaml projects too, with no dep on reason. */
+let moduleAliasFileScheme
+    buildDir::buildDir
+    sourceNotInterfacePaths::sourceNotInterfacePaths
+    libName::libName => {
+  let name extension =>
+    Path.relative dir::buildDir (Utils.tsm (Utils.libToModule libName) ^ "." ^ extension);
+  let sourcePath = name "ml";
+  let cmo = name "cmo";
+  let cmi = name "cmi";
+  let cmt = name "cmt";
+  let fileContent =
+    List.map
+      sourceNotInterfacePaths
+      f::(
+        fun path =>
+          Printf.sprintf
+            "module %s = %s\n"
+            (Utils.tsm (Utils.pathToModule path))
+            (Utils.namespacedName libName::libName path::path)
+      ) |>
+    String.concat sep::"";
+  let action =
+    Utils.bashf
+      /* We suppress a few warnings here through -w.
+         - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
+         can't be found at the moment this module alias file is compiled. This is normal, since the
+         module alias file is the first thing that's compiled (so that we can open it during
+         compilation of A.re and B.re into Foo__A and Foo__B). Think of this as forward declaration.
+
+         - 30: Two labels or constructors of the same name are defined in two mutually recursive
+         types. I forgot...
+
+         - 40: Constructor or label name used out of scope. I forgot too. Great comment huh?
+
+         More flags:
+         -pp refmt option makes ocamlc take our reason syntax source code and pass it through our
+         refmt parser first, before operating on the AST.
+
+         -bin-annot: generates cmt files that contains info such as types and bindings, for use with
+         Merlin.
+
+         -g: add debugging info. You don't really ever compile without this flag.
+
+         -impl: source file. This flag's needed if the source extension isn't ml. I think.
+
+         -o: output name
+         */
+      "bsc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
+      (Path.to_string sourcePath)
+      (Path.to_string cmo);
+  /* TODO: do we even need the cmo file here? */
+  let compileRule =
+    Rule.create targets::[cmo, cmi, cmt] (Dep.map (Dep.path sourcePath) (fun () => action));
+  let contentRule =
+    Rule.create targets::[sourcePath] (Dep.return (Action.save fileContent target::sourcePath));
+  Scheme.rules [contentRule, compileRule]
 };
 
 /*
@@ -172,7 +247,6 @@ let compileLibScheme
   Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}") |>
   mapD (
     fun unsortedPaths =>
-      /* List.iter unsortedPaths f::(fun x => print_endline (Utils.tsp x)); */
       compileSourcesScheme
         libDir::(Path.dirname srcDir)
         buildDir::buildDir
