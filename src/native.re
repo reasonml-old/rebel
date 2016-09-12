@@ -221,7 +221,7 @@ let compileSourcesScheme
             } else {
               firstPartyCmisDeps
             };
-          let namespacedName' = Utils.namespacedName libName::libName path::path;
+          let namespacedName = Utils.namespacedName libName::libName path::path;
           /* Compiling the current source file depends on all of the cmis of all its third-party libraries'
              source files being compiled. This is very coarse since in reality, we only depend on a few source
              files of these third-party libs. But ocamldep isn't granular enough to give us this information
@@ -261,9 +261,9 @@ let compileSourcesScheme
                     )
               )
           );
-          let cmi = Path.relative dir::buildDir (namespacedName' ^ ".cmi");
-          let cmo = Path.relative dir::buildDir (namespacedName' ^ ".cmo");
-          let cmt = Path.relative dir::buildDir (namespacedName' ^ ".cmt");
+          let cmi = Path.relative dir::buildDir (namespacedName ^ ".cmi");
+          let cmo = Path.relative dir::buildDir (namespacedName ^ ".cmo");
+          let cmt = Path.relative dir::buildDir (namespacedName ^ ".cmt");
           let deps = Dep.all_unit [
             Dep.path path,
             moduleAliasDep "cmi",
@@ -324,7 +324,7 @@ let compileSourcesScheme
                   ) |>
                 String.concat sep::" "
               )
-              (Path.to_string (Path.relative dir::buildDir namespacedName'))
+              (Path.to_string (Path.relative dir::buildDir namespacedName))
               (Path.to_string path);
           Rule.create targets::targets (Dep.map deps (fun () => action))
         }

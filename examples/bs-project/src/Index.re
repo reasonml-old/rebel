@@ -6,9 +6,9 @@ let f () => "Hello World, Compiled from REBEL!!";
 
 let g () => Test1.my_secret;
 
-let a = Express.a;
+let a = Rexpress.Express.a;
 
-open Express;
+open Rexpress.Express;
 
 let __dirname: Js.undefined string = [%bs.node __dirname];
 

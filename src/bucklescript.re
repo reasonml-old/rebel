@@ -81,7 +81,7 @@ let moduleAliasFileScheme
   let name extension =>
     Path.relative dir::buildDir (Utils.tsm (Utils.libToModule libName) ^ "." ^ extension);
   let sourcePath = name "ml";
-  let cmo = name "cmo";
+  let cmj = name "cmj";
   let cmi = name "cmi";
   let cmt = name "cmt";
   let fileContent =
@@ -123,33 +123,40 @@ let moduleAliasFileScheme
          */
       "bsc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
       (Path.to_string sourcePath)
-      (Path.to_string cmo);
+      (Path.to_string cmj);
   /* TODO: do we even need the cmo file here? */
   let compileRule =
-    Rule.create targets::[cmo, cmi, cmt] (Dep.map (Dep.path sourcePath) (fun () => action));
+    Rule.create targets::[cmj, cmi, cmt] (Dep.path sourcePath |> mapD (fun () => action));
   let contentRule =
     Rule.create targets::[sourcePath] (Dep.return (Action.save fileContent target::sourcePath));
   Scheme.rules [contentRule, compileRule]
 };
 
 /*
-   FIXME Unlike for native compilation, we don't need to perform name spacing magic here. Correct?
+   We perform name spacing magic for only dependencies.
  */
 let compileSourcesScheme
     libDir::libDir
     buildDir::buildDir
     libName::libName
-    sourcePaths::sourcePaths => {
+    sourcePaths::sourcePaths
+    isTopLevelLib::isTopLevelLib => {
   open Utils;
+  /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
+     to recompile the dependent modules. Win. */
+  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
+  /* TODO Add Ocaml Find Dep support */
+  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
+  /* Compute Module Alias dependencies for dependencies only */
+  let moduleAliasDep = Dep.all_unit (
+    (isTopLevelLib ? [] : ["cmi", "cmj", "cmt", "ml"]) |>
+    List.map f::(fun extension => relD dir::buildDir (tsm (libToModule libName) ^ "." ^ extension))
+  );
+  /* Compute build graph (targets, dependencies) for the current path */
   let compilePathScheme path =>
     ocamlDepCurrentSources sourcePath::path |>
     mapD (
       fun firstPartyDeps => {
-        /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
-           to recompile the dependent modules. Win. */
-        let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
-        /* TODO Add Ocaml Find Dep support */
-        let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
         let isInterface' = isInterface path;
         let hasInterface =
           not isInterface' &&
@@ -203,18 +210,17 @@ let compileSourcesScheme
                         fun sourcePath =>
                           relD
                             dir::(Path.relative dir::buildDirRoot (tsl libName))
-                            (fileNameNoExtNoDir sourcePath ^ ".cmi")
+                            (namespacedName libName::libName path::sourcePath ^ ".cmi")
                       )
                   )
                 )
               }
             )
         );
+        let namespacedName ext::ext =>
+          Path.relative dir::buildDir (namespacedName libName::libName path::path ^ ext);
         let name ext::ext => Path.relative dir::buildDir (fileNameNoExtNoDir path ^ ext);
-        let jsp = name ".js";
-        let cmi = name ".cmi";
-        let cmj = name ".cmj";
-        let cmt = name ".cmt";
+        print_endline (tsp (name ".cmi"));
         let includeDir =
           thirdPartyNpmLibs |> List.map f::(fun libName => "-I _build/" ^ tsl libName) |>
           String.concat sep::" ";
@@ -226,13 +232,22 @@ let compileSourcesScheme
 
                -bs-package-name is set `self` to that it produces right require calls.
              */
-            "bsc -g -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s -o %s -c -impl %s"
+            "bsc -g -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s"
             (tsp buildDir)
+            (isTopLevelLib ? "" : "-open " ^ tsm (libToModule libName))
             (includeDir ^ " -I " ^ tsp buildDir)
-            (tsp jsp)
+            (isTopLevelLib ? tsp (name ".js") : tsp (namespacedName ".js"))
             (tsp path);
-        let targets = [cmi, cmj, cmt, jsp];
-        let deps = Dep.all_unit [Dep.path path, thirdPartiesCmisDep, ...firstPartyCmisDeps];
+        let targets =
+          isTopLevelLib ?
+            [name ".cmi", name ".cmj", name ".cmt", name ".js"] :
+            [namespacedName ".cmi", namespacedName ".cmj", namespacedName ".cmt", name ".js"];
+        let deps = Dep.all_unit [
+          Dep.path path,
+          thirdPartiesCmisDep,
+          moduleAliasDep,
+          ...firstPartyCmisDeps
+        ];
         Rule.create targets::targets (Dep.map deps (fun () => action))
       }
     );
@@ -246,12 +261,31 @@ let compileLibScheme
     buildDir::buildDir =>
   Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}") |>
   mapD (
-    fun unsortedPaths =>
-      compileSourcesScheme
-        libDir::(Path.dirname srcDir)
-        buildDir::buildDir
-        libName::libName
-        sourcePaths::unsortedPaths
+    fun unsortedPaths => {
+      let sourceNotInterfacePaths =
+        List.filter unsortedPaths f::(fun path => not (Utils.isInterface path));
+      if isTopLevelLib {
+        Scheme.all [
+          compileSourcesScheme
+            libDir::(Path.dirname srcDir)
+            buildDir::buildDir
+            libName::libName
+            sourcePaths::unsortedPaths
+            isTopLevelLib::isTopLevelLib
+        ]
+      } else {
+        Scheme.all [
+          moduleAliasFileScheme
+            buildDir::buildDir libName::libName sourceNotInterfacePaths::sourceNotInterfacePaths,
+          compileSourcesScheme
+            libDir::(Path.dirname srcDir)
+            buildDir::buildDir
+            libName::libName
+            sourcePaths::unsortedPaths
+            isTopLevelLib::isTopLevelLib
+        ]
+      }
+    }
   ) |> Scheme.dep;
 
 let scheme dir::dir =>
