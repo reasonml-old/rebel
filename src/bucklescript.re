@@ -134,10 +134,12 @@ let compileSourcesScheme
      to recompile the dependent modules. Win. */
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
   let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
+
+  /** FIXME Doesn't work with core_kernel **/
   let ocamlfindPackagesStr =
     switch thirdPartyOcamlfindLibNames {
     | [] => ""
-    | libs => "-package" ^ (libs |> List.map f::tsl |> String.concat sep::",")
+    | libs => "-bs-package-include " ^ (libs |> List.map f::tsl |> String.concat sep::",")
     };
 
   /** Compute Module Alias dependencies for dependencies only */

@@ -13,7 +13,7 @@ S src
 # .merlin into each node_modules package. This is subtle; in short, it's to make
 # jump-to-location work correctly in conjunction with our build & namespacing
 # setup, when you jump into a third-party file.
-S ./node_modules/**/src
+# S ./node_modules/**/src
 
 # B stands for build (artifacts). We generate ours into _build
 B ./_build/*
@@ -22,10 +22,10 @@ B ./_build/*
 # the location of third-party dependencies. For us, most of our third-party deps
 # reside in `node_modules/` (made visible to Merlin through the S command
 # above); this PKG command is for discovering the opam/ocamlfind packages.
-PKG 
+PKG
 
 # FLG is the set of flags to pass to Merlin, as if it used ocamlc to compile and
 # understand our sources. You don't have to understand what these flags are for
 # now; but if you're curious, go check the rebel.ml that generated this
 # .merlin at https://github.com/reasonml/rebel
-FLG -w -30 -w -40 -open RebelProject
+FLG -w -30 -w -40 -open RebelProject -ppx node_modules/.bin/bsppx

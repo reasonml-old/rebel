@@ -12,7 +12,9 @@
   "rebel": {
     "backend": [
       "bucklescript"
-    ]
+    ],
+    "ocamlfindDependencies": {
+    }
   },
   "dependencies": {
     "Rexpress": "github:vramana/Rexpress"
