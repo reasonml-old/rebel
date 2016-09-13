@@ -10,12 +10,11 @@ open Jenga_lib.Api;
 
 open Utils;
 
-/*
-   Handling dependencies:
+/** Handling dependencies:
 
-   In a reason/bucklescript project, there may be reason/bs dependencies or npm dependencies or both.
-   We need to filter all npm dependencies from the build process. We will test if package is reason/ml
-   dependencies if it has either rebel in the package.json field of the dependency.
+    In a reason/bucklescript project, there may be reason/bs dependencies or npm dependencies or both.
+    We need to filter all npm dependencies from the build process. We will test if package is reason/ml
+    dependencies if it has either rebel in the package.json field of the dependency.
  */
 let isDirRebelCampatible libDir::libDir => {
   let packageJsonPath = Path.relative dir::libDir "package.json";
