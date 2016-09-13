@@ -6,10 +6,11 @@ open Core.Std;
 
 open Jenga_lib.Api;
 
+open Utils;
+
 let scheme dir::dir => {
   ignore dir;
-
-  if (List.mem Utils.backends "bucklescript") {
+  if (List.mem backends "bucklescript") {
     Bucklescript.scheme dir::dir
   } else {
     Native.scheme dir::dir

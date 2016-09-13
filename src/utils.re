@@ -21,6 +21,12 @@ let nonBlank s =>
 
 let relD dir::dir str => Dep.path (Path.relative dir::dir str);
 
+let bindD f dep => Dep.bind dep f;
+
+let mapD f dep => Dep.map dep f;
+
+let rel = Path.relative;
+
 /* assumes there is a suffix to chop. Throws otherwise */
 let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
 

@@ -8,14 +8,15 @@ open Yojson.Basic;
 
 open Jenga_lib.Api;
 
+open Utils;
+
 /*
-  Handling dependencies:
+   Handling dependencies:
 
-  In a reason/bucklescript project, there may be reason/bs dependencies or npm dependencies or both.
-  We need to filter all npm dependencies from the build process. We will test if package is reason/ml
-  dependencies if it has either rebel in the package.json field of the dependency.
-*/
-
+   In a reason/bucklescript project, there may be reason/bs dependencies or npm dependencies or both.
+   We need to filter all npm dependencies from the build process. We will test if package is reason/ml
+   dependencies if it has either rebel in the package.json field of the dependency.
+ */
 let isDirRebelCampatible libDir::libDir => {
   let packageJsonPath = Path.relative dir::libDir "package.json";
   [from_file (Path.to_string packageJsonPath)] |> Util.filter_member "rebel" |> List.length != 0
@@ -23,10 +24,7 @@ let isDirRebelCampatible libDir::libDir => {
 
 let withRebelCompatibleLibs =
   List.filter
-    f::(
-      fun lib =>
-        isDirRebelCampatible libDir::(Path.relative dir::Utils.nodeModulesRoot (Utils.tsl lib))
-    );
+    f::(fun lib => isDirRebelCampatible libDir::(Path.relative dir::nodeModulesRoot (tsl lib)));
 
 /* Simply read into the package.json "dependencies" field. */
 let getThirdPartyNpmLibs libDir::libDir => {
@@ -35,7 +33,7 @@ let getThirdPartyNpmLibs libDir::libDir => {
     [from_file (Path.to_string packageJsonPath)] |> Util.filter_member "dependencies" |> Util.filter_assoc;
   let libs =
     switch deps {
-    | [x] => x |> List.map f::fst |> List.map f::(fun name => Utils.Lib name)
+    | [x] => x |> List.map f::fst |> List.map f::(fun name => Lib name)
     | _ => []
     };
   withRebelCompatibleLibs libs
@@ -48,7 +46,7 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
     from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
     Util.to_option (fun a => a |> Util.member "ocamlfindDependencies");
   switch deps {
-  | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Utils.Lib name)
+  | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Lib name)
   | _ => []
   }
 };
@@ -63,20 +61,19 @@ let sortedTransitiveThirdPartyNpmLibsIncludingSelf's = {
       f::(
         fun name => {
           /* third party's own third party libs */
-          let libDir = Path.relative dir::Utils.nodeModulesRoot (Utils.tsl name);
+          let libDir = Path.relative dir::nodeModulesRoot (tsl name);
           (name, getThirdPartyNpmLibs libDir::libDir)
         }
       );
   /* `topologicalSort` will also return our own deps. */
-  Utils.topologicalSort thirdPartyDeps
+  topologicalSort thirdPartyDeps
 };
 
 let transitiveThirdPartyOcamlfindLibsIncludingSelf's = {
   let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::Path.the_root;
   let thirdPartyOcamlfindLibs = getThirdPartyOcamlfindLibs libDir::Path.the_root;
   let thirdPartyLibDirs =
-    List.map
-      thirdPartyNpmLibs f::(fun name => Path.relative dir::Utils.nodeModulesRoot (Utils.tsl name));
+    List.map thirdPartyNpmLibs f::(fun name => Path.relative dir::nodeModulesRoot (tsl name));
   /* each third party's own third party libs */
   let thirdPartiesThirdPartyOcamlfindLibNamesD =
     List.map thirdPartyLibDirs f::(fun libDir => getThirdPartyOcamlfindLibs libDir::libDir);
