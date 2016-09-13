@@ -1,1 +1,1 @@
-print_endline "Hello World, Compiled from REBEL!!";
+print_endline Test1.secret;
