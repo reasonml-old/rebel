@@ -39,11 +39,12 @@ let bashf fmt => ksprintf bash fmt;
 
 let relD dir::dir str => Dep.path (Path.relative dir::dir str);
 
+let rel = Path.relative;
+
+/* Flipped the operands so that it is easier to use with |> */
 let bindD f dep => Dep.bind dep f;
 
 let mapD f dep => Dep.map dep f;
-
-let rel = Path.relative;
 
 
 /** Path helpers **/
@@ -109,12 +110,13 @@ let bsNamespacedName libName::libName path::path => {
 };
 
 /* let topLibName = {
-  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-  from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
-    fun name => Lib name
-  )
-}; */
+     let packageJsonPath = Path.relative dir::Path.the_root "package.json";
+     from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
+       fun name => Lib name
+     )
+   }; */
 let topLibName = Lib "src";
+
 
 /** FIXME What should be used as topLibName package name or src  */
 /* let topLibName = "src"; */

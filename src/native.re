@@ -526,17 +526,15 @@ let scheme dir::dir => {
   if (dir == Path.the_root) {
     let packageJsonPath = rel dir::Path.the_root "package.json";
     let dotMerlinDefaultScheme = Scheme.rules_dep (
-      Dep.map
-        (Dep.return (NpmDep.getThirdPartyNpmLibs libDir::Path.the_root))
-        (
-          fun libs => {
-            let thirdPartyRoots =
-              List.map libs f::(fun name => rel dir::nodeModulesRoot (tsl name));
-            List.map
-              thirdPartyRoots
-              f::(fun path => Rule.default dir::Path.the_root [relD dir::path ".merlin"])
-          }
-        )
+      Dep.return (NpmDep.getThirdPartyNpmLibs libDir::Path.the_root) |>
+      mapD (
+        fun libs => {
+          let thirdPartyRoots = List.map libs f::(fun name => rel dir::nodeModulesRoot (tsl name));
+          List.map
+            thirdPartyRoots
+            f::(fun path => Rule.default dir::Path.the_root [relD dir::path ".merlin"])
+        }
+      )
     );
     let defaultRule =
       switch backends {
