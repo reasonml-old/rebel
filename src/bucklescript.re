@@ -144,9 +144,12 @@ let compileSourcesScheme
   /** compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
       to recompile the dependent modules. Win. */
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
-
-  /** TODO Add Ocaml Find Dep support */
   let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
+  let ocamlfindPackagesStr =
+    switch thirdPartyOcamlfindLibNames {
+    | [] => ""
+    | libs => "-package" ^ (libs |> List.map f::Utils.tsl |> String.concat sep::",")
+    };
 
   /** Compute Module Alias dependencies for dependencies only */
   let moduleAliasDep = Dep.all_unit (
@@ -242,7 +245,8 @@ let compileSourcesScheme
 
                -bs-package-name is set `self` to that it produces right require calls.
              */
-            "bsc -g -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s"
+            "bsc -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s"
+            ocamlfindPackagesStr
             (tsp buildDir)
             (isTopLevelLib ? "" : "-open " ^ tsm (libToModule libName))
             (includeDir ^ " -I " ^ tsp buildDir)
@@ -263,22 +267,17 @@ let compileSourcesScheme
         ];
 
         /** Workaround for BuckleScript bug https://github.com/bloomberg/bucklescript/issues/757  */
-        let copyTarget = Path.relative dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
-        let copyAction =
-          bashf
-            "cp %s %s"
-            (tsp (simplePath ".js"))
-            (
-              tsp copyTarget
-            );
+        let copyTarget =
+          Path.relative dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
+        let copyAction = bashf "cp %s %s" (tsp (simplePath ".js")) (tsp copyTarget);
         let copyRule =
           Rule.create
             targets::[copyTarget] (Dep.path (simplePath ".js") |> mapD (fun () => copyAction));
 
         /** Compile JS from BuckleScript and copy the file to match require call */
         Scheme.rules [
-           Rule.create targets::targets (Dep.map deps (fun () => action)),
-           ...isTopLevelLib ? [] : [copyRule]
+          Rule.create targets::targets (Dep.map deps (fun () => action)),
+          ...isTopLevelLib ? [] : [copyRule]
         ]
       }
     );
