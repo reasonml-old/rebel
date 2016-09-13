@@ -37,6 +37,12 @@ let isInterface path => {
   String.is_suffix base suffix::".rei" || String.is_suffix base suffix::".mli"
 };
 
+let hasInterface sourcePaths::sourcePaths path =>
+  not (isInterface path) &&
+  List.exists
+    sourcePaths
+    f::(fun path' => isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path);
+
 /* this rebel-specific helpers */
 type moduleName =
   | Mod string;
@@ -71,6 +77,7 @@ let pathToModule path => Mod (fileNameNoExtNoDir path |> String.capitalize);
 let namespacedName libName::libName path::path =>
   tsm (libToModule libName) ^ "__" ^ tsm (pathToModule path);
 
+
 /** FIXME Remove after https://github.com/bloomberg/bucklescript/issues/757 is fixed */
 let bsNamespacedName libName::libName path::path => {
   let bsKebabToCamel =
@@ -80,14 +87,16 @@ let bsNamespacedName libName::libName path::path => {
         fun _ accum char =>
           if (accum == "") {
             Char.to_string char |> String.lowercase
-          } else if (accum.[String.length accum - 1] == '-') {
+          } else if (
+            accum.[String.length accum - 1] == '-'
+          ) {
             String.slice accum 0 (-1) ^ (Char.to_string char |> String.capitalize)
           } else {
             accum ^ Char.to_string char
           }
       );
   let bsLibToModule (Lib name) => Mod (String.capitalize name |> bsKebabToCamel);
-  tsm (bsLibToModule libName) ^ "__" ^ tsm (pathToModule path);
+  tsm (bsLibToModule libName) ^ "__" ^ tsm (pathToModule path)
 };
 
 let nodeModulesRoot = Path.relative dir::Path.the_root "node_modules";
@@ -97,11 +106,14 @@ let buildDirRoot = Path.relative dir::Path.the_root "_build";
 let topSrcDir = Path.relative dir::Path.the_root "src";
 
 let topLibName = {
-  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-  from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
-    fun name => Lib name
-  )
-};
+     let packageJsonPath = Path.relative dir::Path.the_root "package.json";
+     from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
+       fun name => Lib name
+     )
+   };
+
+/** FIXME What should be used as topLibName package name or src  */
+/* let topLibName = "src"; */
 
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
    sorted into [c, d, b, a] or [c, b, d, a], aka the ones being depended on will always come before the
@@ -136,7 +148,7 @@ let backends = {
     Util.to_option (fun a => a |> Util.member "backend");
   switch backends' {
   | Some (`List _ as a) => List.map f::Util.to_string (Util.to_list a)
-  | None => ["native", "jsoo"]
+  | None => ["native"]
   | _ => []
   }
 };

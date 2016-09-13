@@ -1,8 +1,6 @@
 {
-  "bin": {
-    "compile": "compile",
-    "run": "run"
-  },
+  "name": "rebel",
+  "description": "Build system for reason that conforms to the magic-build spec. Implemented with Jenga.",
   "dependencies": {
     "reason": "https://github.com/facebook/reason",
     "dependency-env": "https://github.com/npm-ml/dependency-env.git",
@@ -11,14 +9,16 @@
     "yojson": "https://github.com/npm-opam/yojson",
     "jenga": "https://github.com/npm-opam/jenga"
   },
-  "description": "Prototype that conforms to the magic-build spec. Implemented with Jenga.",
   "devDependencies": {},
   "license": "ISC",
-  "name": "rebel",
   "scripts": {
     "rebel:re": "npm run rebel && ./rebel.sh examples/reason-project",
     "rebel:bs": "npm run rebel && ./rebel.sh examples/bs-project",
-    "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh"
+    "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh",
+    "postinstall": "npm run rebel"
+  },
+  "bin": {
+    "rebel": "_build/src/rebel"
   },
   "version": "0.0.23"
 }

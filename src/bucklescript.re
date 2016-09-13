@@ -79,8 +79,8 @@ let moduleAliasFileScheme
   let cmi = name "cmi";
   let cmt = name "cmt";
   let fileContent =
+    sourceNotInterfacePaths |>
     List.map
-      sourceNotInterfacePaths
       f::(
         fun path =>
           Printf.sprintf
@@ -150,100 +150,85 @@ let compileSourcesScheme
     List.map f::(fun extension => relD dir::buildDir (tsm (libToModule libName) ^ "." ^ extension))
   );
 
+  /** Compiling the current source file depends on all of the cmis of all its third-party libraries'
+      source files being compiled. This is very coarse since in reality, we only depend on a few source
+      files of these third-party libs. But ocamldep isn't granular enough to give us this information
+      yet. */
+  let thirdPartiesJsAndCmisDep = Dep.all_unit (
+    List.map
+      thirdPartyNpmLibs
+      f::(
+        fun libName => {
+          /* if one of a third party library foo's source is Hi.re, then it resides in
+             `node_modules/foo/src/Hi.re`, and its cmi artifacts in `_build/foo/Hi.cmi` */
+          let thirdPartySrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
+          /* No need to glob `.rei/.mli`s here. We're only getting the file names to
+             construct cmi paths. */
+          Dep.glob_listing (Glob.create dir::thirdPartySrcPath "*.{re,ml}") |>
+          bindD (
+            fun thirdPartySources => Dep.all_unit (
+              List.map
+                thirdPartySources
+                f::(
+                  fun sourcePath =>
+                    relD
+                      dir::(rel dir::buildDirRoot (tsl libName))
+                      (namespacedName libName::libName path::sourcePath ^ ".cmi")
+                ) @
+              List.map
+                thirdPartySources
+                f::(
+                  fun sourcePath =>
+                    relD
+                      dir::(rel dir::buildDirRoot (tsl libName))
+                      (bsNamespacedName libName::libName path::sourcePath ^ ".js")
+                )
+            )
+          )
+        }
+      )
+  );
+
   /** Compute build graph (targets, dependencies) for the current path */
   let compilePathScheme path =>
     ocamlDepCurrentSources sourcePath::path |>
     mapD (
       fun firstPartyDeps => {
+        List.iter f::(fun m => print_endline (tsm m)) firstPartyDeps;
         let isInterface' = isInterface path;
-        let hasInterface =
-          not isInterface' &&
-          List.exists
-            sourcePaths
-            f::(
-              fun path' => isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path
-            );
-        let firstPartyCmisDeps =
-          sourcePaths |>
-          List.filter
-            f::(
-              fun path => {
-                let pathAsModule = pathToModule path;
-                List.exists firstPartyDeps f::(fun m => m == pathAsModule)
-              }
-            ) |>
-          List.map f::(fun path => relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmi"));
-        let firstPartyCmisDeps =
-          if (not isInterface' && hasInterface) {
-            [
-              /* We're a source file with an interface; include our own cmi as a dependency (our interface
-                 file should be compile before ourselves). */
-              relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmi"),
-              ...firstPartyCmisDeps
-            ]
-          } else {
-            firstPartyCmisDeps
-          };
-
-        /** Compiling the current source file depends on all of the cmis of all its third-party libraries'
-            source files being compiled. This is very coarse since in reality, we only depend on a few source
-            files of these third-party libs. But ocamldep isn't granular enough to give us this information
-            yet. */
-        let thirdPartiesJsAndCmisDep = Dep.all_unit (
-          List.map
-            thirdPartyNpmLibs
-            f::(
-              fun libName => {
-                /* if one of a third party library foo's source is Hi.re, then it resides in
-                   `node_modules/foo/src/Hi.re`, and its cmi artifacts in `_build/foo/Hi.cmi` */
-                let thirdPartySrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
-                /* No need to glob `.rei/.mli`s here. We're only getting the file names to
-                   construct cmi paths. */
-                Dep.glob_listing (Glob.create dir::thirdPartySrcPath "*.{re,ml}") |>
-                bindD (
-                  fun thirdPartySources => Dep.all_unit (
-                    List.map
-                      thirdPartySources
-                      f::(
-                        fun sourcePath =>
-                          relD
-                            dir::(rel dir::buildDirRoot (tsl libName))
-                            (namespacedName libName::libName path::sourcePath ^ ".cmi")
-                      ) @
-                    List.map
-                      thirdPartySources
-                      f::(
-                        fun sourcePath =>
-                          relD
-                            dir::(rel dir::buildDirRoot (tsl libName))
-                            (bsNamespacedName libName::libName path::sourcePath ^ ".js")
-                      )
-                  )
-                )
-              }
-            )
-        );
-        let namespacedPath ext::ext =>
+        let hasInterface' = hasInterface sourcePaths::sourcePaths path;
+        let namespacedPath ext =>
           rel dir::buildDir (namespacedName libName::libName path::path ^ ext);
-        let simplePath ext::ext => rel dir::buildDir (fileNameNoExtNoDir path ^ ext);
+        let simplePath ext => rel dir::buildDir (fileNameNoExtNoDir path ^ ext);
         let includeDir =
           thirdPartyNpmLibs |> List.map f::(fun libName => "-I _build/" ^ tsl libName) |>
           String.concat sep::" ";
+
+        /** Debug Info */
+        print_endline ("Path: " ^ tsp path);
+        print_endline "First Party Deps: ";
+        print_endline ("Had Interface: " ^ string_of_bool hasInterface');
+        print_endline ("Build Dir: " ^ tsp buildDir);
+        print_endline ("Lib Dir: " ^ tsp libDir);
 
         /** Rule for compiling .re/rei to .js **/
         let action =
           bashf
             /*
-                More Flags:
-               -bs-package-output  set npm-output-path: [opt_module]:path, for example: 'lib/cjs', 'amdjs:lib/amdjs' and 'goog:lib/gjs'
+             More Flags:
+              -bs-package-output  set npm-output-path: [opt_module]:path, for example: 'lib/cjs', 'amdjs:lib/amdjs' and 'goog:lib/gjs'
 
-               -bs-package-name is set `self` to that it produces right require calls.
-             */
+              -bs-package-name is set `self` to that it produces right require calls.
+              */
             (
               if isInterface' {
-                "bsc -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s"
+                "bsc -g %s -pp refmt -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
+              } else if (
+                hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
+              ) {
+                "bsc -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
               } else {
-                "bsc -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s"
+                "bsc -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
               }
             )
             ocamlfindPackagesStr
@@ -253,9 +238,35 @@ let compileSourcesScheme
             (isTopLevelLib ? tsp (simplePath "") : tsp (namespacedPath ""))
             (tsp path);
         let targets =
-          isTopLevelLib ?
-            [simplePath ".cmi", simplePath ".cmj", simplePath ".cmt", simplePath ".js"] :
-            [namespacedPath ".cmi", namespacedPath ".cmj", namespacedPath ".cmt", simplePath ".js"];
+          if isInterface' {
+            [isTopLevelLib ? simplePath ".cmi" : namespacedPath ".cmi"]
+          } else {
+            let extns =
+              if hasInterface' {
+                [".cmj", ".cmt"]
+              } else {
+                [".cmi", ".cmj", ".cmt"]
+              };
+            (isTopLevelLib ? List.map f::simplePath extns : List.map f::namespacedPath extns) @ [
+              simplePath ".js"
+            ]
+          };
+        let firstPartyCmisDeps =
+          sourcePaths |>
+          List.filter
+            f::(fun path => List.exists firstPartyDeps f::(fun m => m == pathToModule path)) |>
+          List.map f::(fun path => relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmj"));
+        let firstPartyCmisDeps =
+          if hasInterface' {
+            [
+              /* We're a source file with an interface; include our own cmi as a dependency (our interface
+                 file should be compile before ourselves). */
+              relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmi"),
+              ...firstPartyCmisDeps
+            ]
+          } else {
+            firstPartyCmisDeps
+          };
         let deps = Dep.all_unit [
           Dep.path path,
           thirdPartiesJsAndCmisDep,
@@ -263,7 +274,8 @@ let compileSourcesScheme
           ...firstPartyCmisDeps
         ];
 
-        /** Workaround for BuckleScript bug https://github.com/bloomberg/bucklescript/issues/757  */
+        /** Workaround for BuckleScript bug https://github.com/bloomberg/bucklescript/issues/757
+            Action to copy the file to match require call */
         let copyTarget = rel dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
         let copyAction = bashf "cp %s %s" (tsp (simplePath ".js")) (tsp copyTarget);
         let copyRule =
