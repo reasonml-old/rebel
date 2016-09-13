@@ -8,54 +8,7 @@ open Jenga_lib.Api;
 
 open Yojson.Basic;
 
-/* general helpers */
-let bash command => Action.process dir::Path.the_root prog::"bash" args::["-c", command] ();
-
-let bashf fmt => ksprintf bash fmt;
-
-let nonBlank s =>
-  switch (String.strip s) {
-  | "" => false
-  | _ => true
-  };
-
-let relD dir::dir str => Dep.path (Path.relative dir::dir str);
-
-let bindD f dep => Dep.bind dep f;
-
-let mapD f dep => Dep.map dep f;
-
-let rel = Path.relative;
-
-/* assumes there is a suffix to chop. Throws otherwise */
-let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
-
-let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
-
-let isInterface path => {
-  let base = Path.basename path;
-  String.is_suffix base suffix::".rei" || String.is_suffix base suffix::".mli"
-};
-
-let hasInterface sourcePaths::sourcePaths path =>
-  not (isInterface path) &&
-  List.exists
-    sourcePaths
-    f::(fun path' => isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path);
-
-/* this rebel-specific helpers */
-type moduleName =
-  | Mod string;
-
-type libName =
-  | Lib string;
-
-let tsp = Path.to_string;
-
-let tsm (Mod s) => s;
-
-let tsl (Lib s) => s;
-
+/* String helpers */
 let kebabToCamel =
   String.foldi
     init::""
@@ -70,6 +23,63 @@ let kebabToCamel =
         }
     );
 
+let nonBlank s =>
+  switch (String.strip s) {
+  | "" => false
+  | _ => true
+  };
+
+/* assumes there is a suffix to chop. Throws otherwise */
+let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
+
+/* jenga helpers */
+let bash command => Action.process dir::Path.the_root prog::"bash" args::["-c", command] ();
+
+let bashf fmt => ksprintf bash fmt;
+
+let relD dir::dir str => Dep.path (Path.relative dir::dir str);
+
+let bindD f dep => Dep.bind dep f;
+
+let mapD f dep => Dep.map dep f;
+
+let rel = Path.relative;
+
+
+/** Path helpers **/
+let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
+
+let isInterface path => {
+  let base = Path.basename path;
+  String.is_suffix base suffix::".rei" || String.is_suffix base suffix::".mli"
+};
+
+let hasInterface sourcePaths::sourcePaths path =>
+  not (isInterface path) &&
+  List.exists
+    sourcePaths
+    f::(fun path' => isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path);
+
+let nodeModulesRoot = Path.relative dir::Path.the_root "node_modules";
+
+let buildDirRoot = Path.relative dir::Path.the_root "_build";
+
+let topSrcDir = Path.relative dir::Path.the_root "src";
+
+
+/** this rebel-specific helpers **/
+type moduleName =
+  | Mod string;
+
+type libName =
+  | Lib string;
+
+let tsp = Path.to_string;
+
+let tsm (Mod s) => s;
+
+let tsl (Lib s) => s;
+
 let libToModule (Lib name) => Mod (String.capitalize name |> kebabToCamel);
 
 let pathToModule path => Mod (fileNameNoExtNoDir path |> String.capitalize);
@@ -77,8 +87,7 @@ let pathToModule path => Mod (fileNameNoExtNoDir path |> String.capitalize);
 let namespacedName libName::libName path::path =>
   tsm (libToModule libName) ^ "__" ^ tsm (pathToModule path);
 
-
-/** FIXME Remove after https://github.com/bloomberg/bucklescript/issues/757 is fixed */
+/* FIXME Remove after bloomberg/bucklescript#757 is fixed */
 let bsNamespacedName libName::libName path::path => {
   let bsKebabToCamel =
     String.foldi
@@ -99,22 +108,16 @@ let bsNamespacedName libName::libName path::path => {
   tsm (bsLibToModule libName) ^ "__" ^ tsm (pathToModule path)
 };
 
-let nodeModulesRoot = Path.relative dir::Path.the_root "node_modules";
-
-let buildDirRoot = Path.relative dir::Path.the_root "_build";
-
-let topSrcDir = Path.relative dir::Path.the_root "src";
-
-let topLibName = {
-     let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-     from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
-       fun name => Lib name
-     )
-   };
+/* let topLibName = {
+  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
+  from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
+    fun name => Lib name
+  )
+}; */
+let topLibName = Lib "src";
 
 /** FIXME What should be used as topLibName package name or src  */
 /* let topLibName = "src"; */
-
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
    sorted into [c, d, b, a] or [c, b, d, a], aka the ones being depended on will always come before the
    dependent */
@@ -141,6 +144,7 @@ let topologicalSort graph => {
   List.rev accum.contents
 };
 
+/* package.json helpers */
 let backends = {
   let packageJsonPath = Path.relative dir::Path.the_root "package.json";
   let backends' =

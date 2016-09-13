@@ -28,4 +28,4 @@ PKG
 # understand our sources. You don't have to understand what these flags are for
 # now; but if you're curious, go check the rebel.ml that generated this
 # .merlin at https://github.com/reasonml/rebel
-FLG -w -30 -w -40 -open RebelProject
+FLG -w -30 -w -40 -open Src
