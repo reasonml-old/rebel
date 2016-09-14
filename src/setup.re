@@ -10,10 +10,13 @@ open Utils;
 
 let scheme dir::dir => {
   ignore dir;
-  if (backend == "bucklescript") {
-    Bucklescript.scheme dir::dir
-  } else {
-    Native.scheme dir::dir
+  switch backend {
+  | "bucklescript" => Bucklescript.scheme dir::dir
+  | "jsoo"
+  | "native" => Native.scheme dir::dir
+  | _ =>
+    print_endline "Invalid backend it should be one of [ native, jsoo, bucklescript ]";
+    Scheme.no_rules
   }
 };
 

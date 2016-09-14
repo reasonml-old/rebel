@@ -7,7 +7,8 @@
     "nopam": "https://github.com/yunxing/nopam.git",
     "ocamlfind": "https://github.com/npm-opam/ocamlfind",
     "yojson": "https://github.com/npm-opam/yojson",
-    "jenga": "https://github.com/npm-opam/jenga"
+    "jenga": "https://github.com/npm-opam/jenga",
+    "js_of_ocaml-bin": "https://github.com/reasonml/js_of_ocaml-bin.git"
   },
   "devDependencies": {},
   "license": "ISC",
