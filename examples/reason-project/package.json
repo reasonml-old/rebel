@@ -10,12 +10,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "core": "github:npm-opam/core"
   },
   "rebel": {
-    "backend": "jsoo",
-    "targets": [
-      "client",
-      "server"
-    ]
+    "backend": "native",
+    "ocamlfindDependencies": {
+      "core": "github:npm-opam/core"
+    }
   }
 }

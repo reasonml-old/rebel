@@ -175,7 +175,7 @@ let compileSourcesScheme
   let ocamlfindPackagesStr =
     switch thirdPartyOcamlfindLibNames {
     | [] => ""
-    | libs => "-package" ^ (libs |> List.map f::tsl |> String.concat sep::",")
+    | libs => "-package " ^ (libs |> List.map f::tsl |> String.concat sep::",")
     };
 
   /** Compiling the current source file depends on all of the cmis of all its third-party libraries'
@@ -228,12 +228,20 @@ let compileSourcesScheme
           thirdPartyNpmLibs |> List.map f::(fun libName => "-I _build/" ^ tsl libName) |>
           String.concat sep::" ";
 
+        /** Hard Coded Rules for special packages */
+        let extraFlags =
+          if (List.mem thirdPartyOcamlfindLibNames (Lib "core")) {
+            "-thread -package threads"
+          } else {
+            ""
+          };
+
         /** Debug Info */
         /* print_endline ("Path: " ^ tsp path);
-        print_endline "First Party Deps: ";
-        print_endline ("Had Interface: " ^ string_of_bool hasInterface');
-        print_endline ("Build Dir: " ^ tsp buildDir);
-        print_endline ("Lib Dir: " ^ tsp libDir); */
+           print_endline "First Party Deps: ";
+           print_endline ("Had Interface: " ^ string_of_bool hasInterface');
+           print_endline ("Build Dir: " ^ tsp buildDir);
+           print_endline ("Lib Dir: " ^ tsp libDir); */
 
         /** Rule for compiling .re/rei/ml/mli to .cmo **/
         /*
@@ -249,18 +257,19 @@ let compileSourcesScheme
           bashf
             (
               if isInterface' {
-                "ocamlfind ocamlc %s -pp refmt -g -w -30 -w -40 %s -I %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
+                "ocamlfind ocamlc -pp refmt -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
               } else if (
                 hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
               ) {
-                "ocamlfind ocamlc %s -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+                "ocamlfind ocamlc -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
               } else {
-                "ocamlfind ocamlc %s -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+                "ocamlfind ocamlc -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
               }
             )
-            ocamlfindPackagesStr
             (isTopLevelLib ? "" : "-open " ^ tsm (libToModule libName))
             (tsp buildDir)
+            extraFlags
+            ocamlfindPackagesStr
             includeDir
             (isTopLevelLib ? tsp (simplePath "") : tsp (namespacedPath ""))
             (tsp path);
@@ -375,7 +384,6 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
     List.map
       sortedTransitiveThirdPartyNpmLibsIncludingSelf's
       f::(fun libName => rel dir::(rel dir::buildDirRoot (tsl libName)) libraryFileName);
-  print_endline (string_of_int (List.length transitiveCmaPaths));
   let ocamlfindPackagesStr =
     if (transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
       ""
@@ -383,6 +391,14 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
       "-linkpkg -package " ^ (
         List.map transitiveThirdPartyOcamlfindLibsIncludingSelf's f::tsl |> String.concat sep::","
       )
+    };
+
+  /** Hard Coded Rules for special packages */
+  let extraFlags =
+    if (List.mem transitiveThirdPartyOcamlfindLibsIncludingSelf's (Lib "core")) {
+      "-thread -package threads"
+    } else {
+      ""
     };
   let action =
     bashf
@@ -400,7 +416,8 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
 
          -o: output file name.
          */
-      "ocamlfind ocamlc %s -g -o %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
+      "ocamlfind ocamlc %s %s -g -o %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
+      extraFlags
       ocamlfindPackagesStr
       (tsp binaryOutput)
       (transitiveCmaPaths |> List.map f::tsp |> String.concat sep::" ")
@@ -489,7 +506,7 @@ let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir => {
 # .merlin into each node_modules package. This is subtle; in short, it's to make
 # jump-to-location work correctly in conjunction with our build & namespacing
 # setup, when you jump into a third-party file.
-S %s
+# S %s
 
 # B stands for build (artifacts). We generate ours into _build
 B %s
