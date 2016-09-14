@@ -11,9 +11,3 @@ _build/
 *.ml
 node_modules/
 npm-debug.log
-
-setup.data
-setup.log
-
-*.native
-*.byte

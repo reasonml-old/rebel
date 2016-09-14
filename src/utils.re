@@ -32,7 +32,8 @@ let nonBlank s =>
 /* assumes there is a suffix to chop. Throws otherwise */
 let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
 
-/* jenga helpers */
+
+/** jenga helpers */
 let bash command => Action.process dir::Path.the_root prog::"bash" args::["-c", command] ();
 
 let bashf fmt => ksprintf bash fmt;
@@ -68,7 +69,7 @@ let buildDirRoot = Path.relative dir::Path.the_root "_build";
 let topSrcDir = Path.relative dir::Path.the_root "src";
 
 
-/** this rebel-specific helpers **/
+/** Rebel-specific helpers **/
 type moduleName =
   | Mod string;
 
@@ -117,9 +118,6 @@ let bsNamespacedName libName::libName path::path => {
    }; */
 let topLibName = Lib "src";
 
-
-/** FIXME What should be used as topLibName package name or src  */
-/* let topLibName = "src"; */
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
    sorted into [c, d, b, a] or [c, b, d, a], aka the ones being depended on will always come before the
    dependent */
