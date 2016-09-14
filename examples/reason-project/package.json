@@ -12,7 +12,7 @@
   "dependencies": {
   },
   "rebel": {
-    "backend": "native",
+    "backend": "jsoo",
     "targets": [
       "client",
       "server"
