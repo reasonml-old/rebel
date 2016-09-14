@@ -31,7 +31,7 @@ Build system that conforms to the ideal [Reason](https://github.com/facebook/rea
 
 ## For Consumers
 
-- `npm install --save-dev rebel`
+- `npm install --save-dev reasonml/rebel`
 - Write some files in your `src/`, or install some spec compliant (see above) npm packages.
 - `./node_modules/.bin/rebel`. :tada: :tada:!
 - Binary in `_build/src/app.out`
