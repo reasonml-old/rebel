@@ -142,7 +142,7 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
 
          -o: output name
          */
-      "ocamlc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
+      "ocamlc -custom -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
       (tsp sourcePath)
       (tsp (moduleAliasFile ".cmo"));
   /* TODO: do we even need the cmo file here? */
@@ -259,13 +259,13 @@ let compileSourcesScheme
           bashf
             (
               if isInterface' {
-                "ocamlfind ocamlc -pp refmt -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
+                "ocamlfind ocamlc -custom -pp refmt -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
               } else if (
                 hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
               ) {
-                "ocamlfind ocamlc -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+                "ocamlfind ocamlc -custom -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
               } else {
-                "ocamlfind ocamlc -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+                "ocamlfind ocamlc -custom -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
               }
             )
             (isTopLevelLib ? "" : "-open " ^ tsm (libToModule libName))
@@ -361,7 +361,7 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
              -o: output file name.
              */
           /* Example command: ocamlc -g -open Foo -a -o lib.cma foo.cmo aDependsOnMe.cmo a.cmo b.cmo */
-          "ocamlc -g -open %s -a -o %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
+          "ocamlc -custom -g -open %s -a -o %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
           moduleName
           (tsp cmaPath)
           (tsp moduleAliasCmoPath)
@@ -418,7 +418,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
 
          -o: output file name.
          */
-      "ocamlfind ocamlc %s %s -g -o %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
+      "ocamlfind ocamlc -custom %s %s -g -o %s %s %s 2>&1; (exit ${PIPESTATUS[0]})"
       extraFlags
       ocamlfindPackagesStr
       (tsp binaryOutput)
@@ -486,7 +486,6 @@ let compileLibScheme
         ]
       )
   ) |> Scheme.dep;
-
 
 let scheme dir::dir => {
   ignore dir;
