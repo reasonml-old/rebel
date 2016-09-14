@@ -14,7 +14,7 @@
   "scripts": {
     "rebel:re": "npm run rebel && ./rebel.sh examples/reason-project",
     "rebel:bs": "npm run rebel && ./rebel.sh examples/bs-project",
-    "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh",
+    "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel-byte.sh",
     "postinstall": "npm run rebel"
   },
   "bin": {
