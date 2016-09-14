@@ -11,13 +11,10 @@
   "license": "ISC",
   "rebel": {
     "backend": "bucklescript",
-    "ocamlfindDependencies": {
-    },
     "targets": [
       "client",
       "server"
-    ],
-    "bscFlags": ""
+    ]
   },
   "dependencies": {
     "Rexpress": "github:vramana/Rexpress"

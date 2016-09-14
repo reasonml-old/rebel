@@ -11,7 +11,8 @@ open NpmDep;
 open Utils;
 
 let jsOutput =
-  List.map targets f::(fun t => rel dir::(rel dir::buildDirRoot (tsl topLibName)) (t ^ ".js"));
+  (targets == [] ? ["index"] : targets) |>
+  List.map f::(fun t => rel dir::(rel dir::buildDirRoot (tsl topLibName)) (t ^ ".js"));
 
 /* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module

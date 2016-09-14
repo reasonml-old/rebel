@@ -16,7 +16,6 @@
     "targets": [
       "client",
       "server"
-    ],
-    "ocamlcFlags": ""
+    ]
   }
 }
