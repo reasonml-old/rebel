@@ -10,7 +10,7 @@ open Utils;
 
 let scheme dir::dir => {
   ignore dir;
-  if (List.mem backends "bucklescript") {
+  if (backend == "bucklescript") {
     Bucklescript.scheme dir::dir
   } else {
     Native.scheme dir::dir

@@ -12,6 +12,11 @@
   "dependencies": {
   },
   "rebel": {
-    "backend": [ "native" ]
+    "backend": "native",
+    "targets": [
+      "client",
+      "server"
+    ],
+    "ocamlcFlags": ""
   }
 }

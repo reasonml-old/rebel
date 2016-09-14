@@ -6,9 +6,12 @@ open Core.Std;
 
 open Jenga_lib.Api;
 
+open NpmDep;
+
 open Utils;
 
-let jsOutput = rel dir::(rel dir::buildDirRoot (tsl topLibName)) "index.js";
+let jsOutput =
+  List.map targets f::(fun t => rel dir::(rel dir::buildDirRoot (tsl topLibName)) (t ^ ".js"));
 
 /* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module
@@ -132,8 +135,8 @@ let compileSourcesScheme
     isTopLevelLib::isTopLevelLib => {
   /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
      to recompile the dependent modules. Win. */
-  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
-  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
+  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::libDir;
+  let thirdPartyOcamlfindLibNames = getThirdPartyOcamlfindLibs libDir::libDir;
 
   /** FIXME Doesn't work with core_kernel **/
   let ocamlfindPackagesStr =
@@ -160,7 +163,6 @@ let compileSourcesScheme
           /* if one of a third party library foo's source is Hi.re, then it resides in
              `node_modules/foo/src/Hi.re`, and its cmj artifacts in `_build/foo/Foo__Hi.cmj` */
           let thirdPartySrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
-
           let thirdPartyBuildPathD path::path ext::ext =>
             relD
               dir::(rel dir::buildDirRoot (tsl libName))
@@ -335,7 +337,7 @@ let compileLibScheme
 
 let scheme dir::dir =>
   if (dir == Path.the_root) {
-    Scheme.all [Scheme.rules [Rule.default dir::dir [Dep.path jsOutput]]]
+    Scheme.all [Scheme.rules [Rule.default dir::dir (List.map f::Dep.path jsOutput)]]
   } else if (
     Path.is_descendant dir::buildDirRoot dir
   ) {

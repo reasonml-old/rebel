@@ -147,14 +147,49 @@ let topologicalSort graph => {
 };
 
 /* package.json helpers */
-let backends = {
+let targets = {
   let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-  let backends' =
+  let targets' =
+    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
+    Util.to_option (fun a => a |> Util.member "targets");
+  switch targets' {
+  | Some (`List _ as a) => List.map f::Util.to_string (Util.to_list a)
+  | None => []
+  | _ => []
+  }
+};
+
+let backend = {
+  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
+  let optBackend =
     from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
     Util.to_option (fun a => a |> Util.member "backend");
-  switch backends' {
-  | Some (`List _ as a) => List.map f::Util.to_string (Util.to_list a)
-  | None => ["native"]
-  | _ => []
+  switch optBackend {
+  | Some (`String _ as a) =>
+    let backend' = Util.to_string a;
+    List.mem ["native", "jsoo", "bucklescript"] backend' ? backend' : "native"
+  | _ => "native"
+  }
+};
+
+let bscFlags = {
+  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
+  let flags =
+    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
+    Util.to_option (fun a => a |> Util.member "bscFlags");
+  switch flags {
+  | Some (`String _ as a) => Util.to_string a
+  | _ => ""
+  }
+};
+
+let ocamlcFlags = {
+  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
+  let flags =
+    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
+    Util.to_option (fun a => a |> Util.member "ocamlcFlags");
+  switch flags {
+  | Some (`String _ as a) => Util.to_string a
+  | _ => ""
   }
 };

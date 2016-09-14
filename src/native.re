@@ -10,6 +10,8 @@ open Async.Std;
 
 open Jenga_lib.Api;
 
+open NpmDep;
+
 open Utils;
 
 let libraryFileName = "lib.cma";
@@ -159,8 +161,8 @@ let compileSourcesScheme
     sourcePaths::sourcePaths => {
   /* This is the module alias file generated through `moduleAliasFileScheme`, that we said we're gonna `-open`
      during `ocamlc` */
-  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
-  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
+  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::libDir;
+  let thirdPartyOcamlfindLibNames = getThirdPartyOcamlfindLibs libDir::libDir;
   let moduleAliasDep = Dep.all_unit (
     [".cmo", ".cmi", ".cmt", ".ml"] |>
     List.map f::(fun ext => relD dir::buildDir (tsm (libToModule libName) ^ ext))
@@ -359,7 +361,6 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
    files, we've already mingled in the correctly jsoo search paths in ocamlc to make this final compilation
    work. */
 let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
-  let backends = backends;
   let buildDir = rel dir::buildDirRoot (tsl topLibName);
   let moduleAliasCmoPath = rel dir::buildDir (tsm (libToModule topLibName) ^ ".cmo");
   let cmos =
@@ -370,15 +371,14 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
   let cmosString = List.map cmos f::tsp |> String.concat sep::" ";
   let transitiveCmaPaths =
     List.map
-      NpmDep.sortedTransitiveThirdPartyNpmLibsIncludingSelf's
+      sortedTransitiveThirdPartyNpmLibsIncludingSelf's
       f::(fun libName => rel dir::(rel dir::buildDirRoot (tsl libName)) libraryFileName);
   let ocamlfindPackagesStr =
-    if (NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
+    if (transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
       ""
     } else {
       "-linkpkg -package " ^ (
-        List.map NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's f::tsl |>
-        String.concat sep::","
+        List.map transitiveThirdPartyOcamlfindLibsIncludingSelf's f::tsl |> String.concat sep::","
       )
     };
   let action =
@@ -406,7 +406,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
       cmosString;
   let nativeRule =
     /* We check here for jsoo because jsoo needs binaryOutput */
-    List.mem backends "native" || List.mem backends "jsoo" ?
+    backend == "native" || backend == "jsoo" ?
       [
         Rule.simple
           targets::[binaryOutput]
@@ -418,7 +418,7 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
       ] :
       [];
   let javascriptRule =
-    List.mem backends "jsoo" ?
+    backend == "jsoo" ?
       [
         Rule.simple
           targets::[jsOutput]
@@ -513,7 +513,7 @@ FLG -w -30 -w -40 -open %s
   Scheme.rules [
     Rule.create
       targets::[dotMerlinPath]
-      (Dep.map (Dep.return (NpmDep.getThirdPartyOcamlfindLibs libDir::dir)) saveMerlinAction)
+      (Dep.map (Dep.return (getThirdPartyOcamlfindLibs libDir::dir)) saveMerlinAction)
   ]
 };
 
@@ -526,7 +526,7 @@ let scheme dir::dir => {
   if (dir == Path.the_root) {
     let packageJsonPath = rel dir::Path.the_root "package.json";
     let dotMerlinDefaultScheme = Scheme.rules_dep (
-      Dep.return (NpmDep.getThirdPartyNpmLibs libDir::Path.the_root) |>
+      Dep.return (getThirdPartyNpmLibs libDir::Path.the_root) |>
       mapD (
         fun libs => {
           let thirdPartyRoots = List.map libs f::(fun name => rel dir::nodeModulesRoot (tsl name));
@@ -537,9 +537,9 @@ let scheme dir::dir => {
       )
     );
     let defaultRule =
-      switch backends {
-      | _ when List.mem backends "jsoo" => [Dep.path jsOutput]
-      | _ when List.mem backends "native" => [Dep.path binaryOutput]
+      switch backend {
+      | "jsoo" => [Dep.path jsOutput]
+      | "native" => [Dep.path binaryOutput]
       | _ => []
       };
     Scheme.all [
