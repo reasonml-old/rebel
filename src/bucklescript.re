@@ -353,7 +353,7 @@ let scheme dir::dir =>
       )
     );
     Scheme.all [
-      dotMerlinScheme isTopLevelLib::true dir::Path.the_root libName::topLibName,
+      dotMerlinScheme isTopLevelLib::true dir::Path.the_root libName::topLibName bscBackend::true,
       Scheme.rules [
         Rule.default dir::dir (List.map f::Dep.path jsOutput @ [relD dir::Path.the_root ".merlin"])
       ],
@@ -375,7 +375,7 @@ let scheme dir::dir =>
     Path.dirname dir == nodeModulesRoot
   ) {
     let libName = Lib (Path.basename dir);
-    dotMerlinScheme isTopLevelLib::false dir::dir libName::libName
+    dotMerlinScheme isTopLevelLib::false dir::dir libName::libName bscBackend::true
   } else {
     Scheme.no_rules
   };

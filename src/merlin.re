@@ -11,7 +11,7 @@ open Utils;
 open NpmDep;
 
 /* See comment in the `sprintf` */
-let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir => {
+let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir bscBackend::bscBackend=true => {
   let dotMerlinPath = rel dir::dir ".merlin";
   let saveMerlinAction thirdPartyOcamlfindLibNames => {
     let dotMerlinContent =
@@ -46,13 +46,14 @@ PKG %s
 # understand our sources. You don't have to understand what these flags are for
 # now; but if you're curious, go check the rebel.ml that generated this
 # .merlin at https://github.com/reasonml/rebel
-FLG -w -30 -w -40 -open %s
+FLG -w -30 -w -40 -open %s %s
 |}
         (isTopLevelLib ? "S src" : "")
         (Path.reach_from dir::dir (rel dir::nodeModulesRoot "**/src"))
         (Path.reach_from dir::dir (rel dir::buildDirRoot "*"))
         (thirdPartyOcamlfindLibNames |> List.map f::tsl |> String.concat sep::" ")
-        (tsm (libToModule libName));
+        (tsm (libToModule libName))
+        (isTopLevelLib && bscBackend ? "-ppx node_modules/.bin/bsppx" : "");
     Action.save dotMerlinContent target::dotMerlinPath
   };
   Scheme.rules [
