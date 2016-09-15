@@ -340,25 +340,7 @@ let compileLibScheme
 
 let scheme dir::dir =>
   if (dir == Path.the_root) {
-    let packageJsonPath = rel dir::Path.the_root "package.json";
-    let dotMerlinDefaultScheme = Scheme.rules_dep (
-      Dep.return (getThirdPartyNpmLibs libDir::Path.the_root) |>
-      mapD (
-        fun libs => {
-          let thirdPartyRoots = List.map libs f::(fun name => rel dir::nodeModulesRoot (tsl name));
-          List.map
-            thirdPartyRoots
-            f::(fun path => Rule.default dir::Path.the_root [relD dir::path ".merlin"])
-        }
-      )
-    );
-    Scheme.all [
-      dotMerlinScheme isTopLevelLib::true dir::Path.the_root libName::topLibName bscBackend::true,
-      Scheme.rules [
-        Rule.default dir::dir (List.map f::Dep.path jsOutput @ [relD dir::Path.the_root ".merlin"])
-      ],
-      Scheme.exclude (fun path => path == packageJsonPath) dotMerlinDefaultScheme
-    ]
+    Scheme.all [Scheme.rules [Rule.default dir::dir (List.map f::Dep.path jsOutput)]]
   } else if (
     Path.is_descendant dir::buildDirRoot dir
   ) {
@@ -371,11 +353,6 @@ let scheme dir::dir =>
       isTopLevelLib::isTopLevelLib
       libName::libName
       buildDir::(rel dir::buildDirRoot dirName)
-  } else if (
-    Path.dirname dir == nodeModulesRoot
-  ) {
-    let libName = Lib (Path.basename dir);
-    dotMerlinScheme isTopLevelLib::false dir::dir libName::libName bscBackend::true
   } else {
     Scheme.no_rules
   };

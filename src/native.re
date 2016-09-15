@@ -494,29 +494,13 @@ let scheme dir::dir => {
      jump-to-location could work correctly when we jump into a third-party source file. As to why exactly we
      generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
   if (dir == Path.the_root) {
-    let packageJsonPath = rel dir::Path.the_root "package.json";
-    let dotMerlinDefaultScheme = Scheme.rules_dep (
-      Dep.return (getThirdPartyNpmLibs libDir::Path.the_root) |>
-      mapD (
-        fun libs => {
-          let thirdPartyRoots = List.map libs f::(fun name => rel dir::nodeModulesRoot (tsl name));
-          List.map
-            thirdPartyRoots
-            f::(fun path => Rule.default dir::Path.the_root [relD dir::path ".merlin"])
-        }
-      )
-    );
     let defaultRule =
       switch backend {
       | "jsoo" => [Dep.path jsOutput]
       | "native" => [Dep.path binaryOutput]
       | _ => []
       };
-    Scheme.all [
-      dotMerlinScheme isTopLevelLib::true dir::Path.the_root libName::topLibName bscBackend::false,
-      Scheme.rules [Rule.default dir::dir (defaultRule @ [relD dir::Path.the_root ".merlin"])],
-      Scheme.exclude (fun path => path == packageJsonPath) dotMerlinDefaultScheme
-    ]
+    Scheme.all [Scheme.rules [Rule.default dir::dir defaultRule]]
   } else if (
     Path.is_descendant dir::buildDirRoot dir
   ) {

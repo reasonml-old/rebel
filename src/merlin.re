@@ -56,7 +56,7 @@ FLG -w -30 -w -40 %s %s
         (Path.reach_from dir::dir (rel dir::nodeModulesRoot "**/src"))
         (Path.reach_from dir::dir (rel dir::buildDirRoot "*"))
         (thirdPartyOcamlfindLibNames |> List.map f::tsl |> String.concat sep::" ")
-        (bscBackend || isTopLevelLib ? "" : tsm (libToModule libName))
+        (isTopLevelLib ? "" : tsm (libToModule libName))
         (isTopLevelLib && bscBackend ? "-ppx node_modules/.bin/bsppx" : "");
     Action.save dotMerlinContent target::dotMerlinPath
   };
