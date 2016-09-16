@@ -184,7 +184,7 @@ let compileSourcesScheme
       source files being compiled. This is very coarse since in reality, we only depend on a few source
       files of these third-party libs. But ocamldep isn't granular enough to give us this information
       yet. */
-  let thirdPartiesCmosDep = Dep.all_unit (
+  let thirdPartiesCmisDep = Dep.all_unit (
     List.map
       thirdPartyNpmLibs
       f::(
@@ -205,7 +205,7 @@ let compileSourcesScheme
           bindD (
             fun thirdPartySources => Dep.all_unit (
               List.map
-                thirdPartySources f::(fun path => thirdPartyBuildPathD path::path ext::".cmo")
+                thirdPartySources f::(fun path => thirdPartyBuildPathD path::path ext::".cmi")
             )
           )
         }
@@ -282,7 +282,7 @@ let compileSourcesScheme
           sourcePaths |>
           List.filter
             f::(fun path => List.exists firstPartyDeps f::(fun m => m == pathToModule path)) |>
-          List.map f::(fun path => relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmo"));
+          List.map f::(fun path => relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmi"));
         let firstPartyArtifactDeps =
           if (not isInterface' && hasInterface') {
             [
@@ -300,7 +300,7 @@ let compileSourcesScheme
         let deps = Dep.all_unit [
           Dep.path path,
           moduleAliasDep,
-          thirdPartiesCmosDep,
+          thirdPartiesCmisDep,
           ...firstPartyArtifactDeps
         ];
 

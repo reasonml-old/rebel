@@ -267,7 +267,7 @@ let compileSourcesScheme
           };
 
         /** FIXME is this comment valid?
-            compiling here only needs cmks. If the interface signature doesn't change, ocaml doesn't need
+            compiling here only needs cmjs. If the interface signature doesn't change, ocaml doesn't need
             to recompile the dependent modules. Win. */
         let firstPartyArtifactDeps =
           sourcePaths |>
