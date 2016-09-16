@@ -2,12 +2,12 @@
   "name": "rebel",
   "description": "Build system for reason that conforms to the magic-build spec. Implemented with Jenga.",
   "dependencies": {
-    "reason": "https://github.com/facebook/reason",
+    "reason": "https://github.com/facebook/reason.git",
     "dependency-env": "https://github.com/npm-ml/dependency-env.git",
     "nopam": "https://github.com/yunxing/nopam.git",
-    "ocamlfind": "https://github.com/npm-opam/ocamlfind",
-    "yojson": "https://github.com/npm-opam/yojson",
-    "jenga": "https://github.com/npm-opam/jenga",
+    "ocamlfind": "https://github.com/npm-opam/ocamlfind.git",
+    "yojson": "https://github.com/npm-opam/yojson.git",
+    "jenga": "https://github.com/npm-opam/jenga.git",
     "js_of_ocaml-bin": "https://github.com/reasonml/js_of_ocaml-bin.git"
   },
   "devDependencies": {},
