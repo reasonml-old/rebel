@@ -1,24 +1,22 @@
 {
-  "bin": {
-    "compile": "compile",
-    "run": "run"
-  },
+  "name": "rebel",
+  "description": "Build system for reason that conforms to the magic-build spec. Implemented with Jenga.",
   "dependencies": {
-    "reason": "https://github.com/facebook/reason",
-    "nopam": "https://github.com/yunxing/nopam.git",
+    "reason": "https://github.com/facebook/reason.git",
     "dependency-env": "https://github.com/npm-ml/dependency-env.git",
-    "yojson": "https://github.com/npm-opam/yojson",
-    "ocamlfind": "https://github.com/npm-opam/ocamlfind",
-    "jenga-bin": "https://github.com/reasonml/jenga-bin",
+    "nopam": "https://github.com/yunxing/nopam.git",
+    "ocamlfind": "https://github.com/npm-opam/ocamlfind.git",
+    "yojson": "https://github.com/npm-opam/yojson.git",
+    "jenga": "https://github.com/npm-opam/jenga.git",
     "js_of_ocaml-bin": "https://github.com/reasonml/js_of_ocaml-bin.git"
   },
-  "description": "Prototype that conforms to the magic-build spec. Implemented with Jenga.",
   "devDependencies": {},
   "license": "ISC",
-  "name": "rebel",
   "scripts": {
-    "postinstall": "eval $(dependencyEnv) && nopam && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractDeps.re -o buildUtils/extractDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/extractOcamlfindDeps.re -o buildUtils/extractOcamlfindDeps.out && ocamlfind ocamlc -pp refmt -linkpkg -package yojson -g -impl buildUtils/isDepRebelCompatible.re -o buildUtils/isDepRebelCompatible.out && refmt -print ml -parse re rebel.re | sed 's/\\[@explicit_arity \\]//g' > rebel.ml",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "rebel:re": "npm run rebel && ./rebel.sh examples/reason-project",
+    "rebel:bs": "npm run rebel && ./rebel.sh examples/bs-project",
+    "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh",
+    "postinstall": "npm run rebel && cp -f _build/src/rebel ../.bin/"
   },
   "version": "0.0.23"
 }

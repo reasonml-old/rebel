@@ -5,17 +5,17 @@ Build system that conforms to the ideal [Reason](https://github.com/facebook/rea
 ## Features
 
 - Lightning build speed: fast startup, incremental, parallel, etc.
-- `./node_modules/.bin/compile` to build everything (shorter command coming soon!). No need for sub-build commands since only changed things are rebuilt.
+- `rebel` to build everything. No need for sub-build commands since only changed things are rebuilt.
 - Works with npm-style `node_modules` third-party dependencies that follows the spec (see next section).
-- Works with OPAM/ocamlfind dependencies: put them in the `jengaboot.ocamlfindDependencies` field, [like so](https://github.com/chenglou/jengaboot/blob/e4a8860617b1c27f0faeeb40082476a22c5e07df/package.json#L28).
+- Works with OPAM/ocamlfind dependencies: put them in the `rebel.ocamlfindDependencies` field, [like so](https://github.com/chenglou/jengaboot/blob/e4a8860617b1c27f0faeeb40082476a22c5e07df/package.json#L28).
 - Works with Reason and vanilla OCaml syntax, out of the box.
-- Generates the correct .merlin files for [Merlin](https://github.com/the-lambda-church/merlin), for editor assistance.
-- Generates JavaScript output through [js_of_ocaml](http://ocsigen.org/js_of_ocaml/).
-- Integrated [BetterErrors](https://github.com/npm-ml/BetterErrors).
+- Generates JavaScript output through [js_of_ocaml](http://ocsigen.org/js_of_ocaml/) or [bucklescript](https://github.com/bloomberg/bucklescript).
 - Peace-of-mind "wipe the whole world" : just remove `_build/`.
 - Share your work through the normal npm workflow: `npm publish`.
 
 **Coming soon**:
+- Integrated [BetterErrors](https://github.com/npm-ml/BetterErrors).
+- Generates the correct .merlin files for [Merlin](https://github.com/the-lambda-church/merlin), for editor assistance.
 - Generates utop/rtop bootstrap file.
 - Generates documentation based on `mli`/`rei` interface files.
 - Easier installation: bundle Jenga, etc.
@@ -25,23 +25,22 @@ Build system that conforms to the ideal [Reason](https://github.com/facebook/rea
 - Needs a flat `src/` directory.
 - Third-party libraries go into `node_modules/`, flat list of all transitive dependencies.
 - Third-party libraries names of the format `foo-bar` are transformed into FooBar when used as module name (source file names aren't allowed to have kebab-case).
-- Every library (including the current one) needs a package.json that lists its npm dependencies in `dependencies` (as usual). OPAM/ocamlfind dependencies go into `jengaboot.ocamlfindDependencies`, same format as `dependencies`.
+- Every library (including the current one) needs a package.json that lists its npm dependencies in `dependencies` (as usual). OPAM/ocamlfind dependencies go into `rebel.ocamlfindDependencies`, same format as `dependencies`.
 - Refer to your own files e.g. `myFoo` as the module `MyFoo` in other files in the current project.
 - Refer to third-party files e.g. `node_modules/bar/src/index.re` as `Bar.Index` in the current project.
 
 ## For Consumers
 
-You need to have Jenga, YoJson, Ocamlfind and js_of_ocaml installed via OPAM. Additionally, please have `realpath` command-line util installed (temporary requirement).
-- `opam update`
-- `opam pin add -y jenga https://github.com/chenglou/jenga.git#5014bf62bb15fc9649debf214c4f5c3ef54f4682`
-- `opam install js_of_ocaml`
-- `opam install yojson`
-- `opam install ocamlfind`
-- `npm init`
-- `npm install --save-dev jengaboot`
+- `npm install --save-dev reasonml/rebel`
 - Write some files in your `src/`, or install some spec compliant (see above) npm packages.
-- `./node_modules/.bin/run`. Ta-da!
-- Binary in `_build/top/app.out`. JavaScript output in `_build/top/app.js`
+- `./node_modules/.bin/rebel`. :tada: :tada:!
+- Binary in `_build/src/app.out`
+
+## Rebel Config
+
+- backend (string): One of "jsoo", "native", "bucklescript".
+- targets ([string]): entry points for reason application. Currently only works with bucklescript.
+- ocamlfindDependencies (object) : place to list ocaml packages that work with ocamlfind
 
 ### More Info
 **What to put in `gitignore` and `npmignore` when developing a jengaboot compliant project?**
@@ -55,8 +54,8 @@ Ping me on IRC (chenglou), Twitter (@_chenglou), [Gitter](http://gitter.im/faceb
 
 - `git clone` this repo
 - `npm install`
-- modify jengaroot logic in `rebel.re`
-- `npm run test`
+- Modify logic in `src`
+- To test examples run `npm run rebel:bs` or `npm run rebel:re`
 
 ### Things to test
 - Support for source/interface interface files that are (uncapitalized, Capitalized) and (snake_cased, camelCased). Support third-party library names of the latter pair (npm modules can no longer be capitalized).

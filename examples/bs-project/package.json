@@ -1,0 +1,25 @@
+{
+  "name": "bs-project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "rebel -show-actions-run-verbose -verbose -show-error-dependency-paths -brief-error-summary -show-buildable-discovery"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "rebel": {
+    "backend": "bucklescript",
+    "targets": [
+      "client",
+      "server"
+    ]
+  },
+  "dependencies": {
+    "Rexpress": "github:vramana/Rexpress"
+  },
+  "devDependencies": {
+    "bs-platform": "^1.0.1"
+  }
+}

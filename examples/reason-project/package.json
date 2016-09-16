@@ -1,0 +1,21 @@
+{
+  "name": "rebel-project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "rebel -show-actions-run-verbose -verbose -show-error-dependency-paths -brief-error-summary -show-buildable-discovery"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "core": "github:npm-opam/core"
+  },
+  "rebel": {
+    "backend": "native",
+    "ocamlfindDependencies": {
+      "core": "github:npm-opam/core"
+    }
+  }
+}

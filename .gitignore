@@ -3,9 +3,11 @@
 !.npmignore
 !.merlin
 *.cmi
+*.cmj
+
 *.cmo
 _build/
 *.out
-rebel.ml
+*.ml
 node_modules/
 npm-debug.log
