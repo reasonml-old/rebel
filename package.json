@@ -23,6 +23,7 @@
   "license": "ISC",
   "scripts": {
     "rebel:re": "npm run rebel && ./rebel.sh examples/reason-project",
+    "rebel:rs": "npm run rebel && ./rebel.sh examples/recursive-src",
     "rebel:bs": "npm run rebel && ./rebel.sh examples/bs-project",
     "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh",
     "postinstall": "npm run rebel"

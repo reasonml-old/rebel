@@ -352,7 +352,7 @@ let scheme dir::dir =>
       srcDir::srcDir
       isTopLevelLib::isTopLevelLib
       libName::libName
-      buildDir::(rel dir::buildDirRoot dirName)
+      buildDir::dir
   } else {
     Scheme.no_rules
   };
