@@ -7,7 +7,7 @@
     "nopam": "https://github.com/yunxing/nopam.git",
     "ocamlfind": "https://github.com/npm-opam/ocamlfind.git",
     "yojson": "https://github.com/npm-opam/yojson.git",
-    "jenga": "https://github.com/npm-opam/jenga.git",
+    "jenga-bin": "https://github.com/reasonml/jenga-bin.git",
     "js_of_ocaml-bin": "https://github.com/reasonml/js_of_ocaml-bin.git"
   },
   "devDependencies": {},
