@@ -14,8 +14,8 @@
   },
   "rebel": {
     "backend": "native",
-    "ocamlfindDependencies": {
-      "core": "github:npm-opam/core"
-    }
+    "ocamlfindDependencies": [
+      "core"
+    ]
   }
 }

@@ -40,7 +40,7 @@ Build system that conforms to the ideal [Reason](https://github.com/facebook/rea
 
 - backend (string): One of "jsoo", "native", "bucklescript".
 - targets ([string]): entry points for reason application. Currently only works with bucklescript.
-- ocamlfindDependencies (object) : place to list ocaml packages that work with ocamlfind
+- ocamlfindDependencies (array) : list of ocaml packages that work with ocamlfind
 
 ### More Info
 **What to put in `gitignore` and `npmignore` when developing a jengaboot compliant project?**
