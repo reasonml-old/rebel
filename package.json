@@ -11,6 +11,14 @@
     "js_of_ocaml-bin": "https://github.com/reasonml/js_of_ocaml-bin.git"
   },
   "devDependencies": {},
+  "exportedEnvVars": {
+    "PATH": {
+      "global": true,
+      "globalCollisionBehavior": "joinPath",
+      "resolveAsRelativePath": true,
+      "val": "./_build/src/"
+    }
+  },
   "license": "ISC",
   "scripts": {
     "rebel:re": "npm run rebel && ./rebel.sh examples/reason-project",
