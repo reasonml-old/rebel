@@ -45,7 +45,9 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
     from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
     Util.to_option (fun a => a |> Util.member "ocamlfindDependencies");
   switch deps {
+  /** TODO Remove object notation at a later point **/
   | Some (`Assoc d) => d |> List.map f::fst |> List.map f::(fun name => Lib name)
+  | Some (`List d) => d |> List.map f::Util.to_string |> List.map f::(fun name => Lib name)
   | _ => []
   }
 };
