@@ -2,19 +2,17 @@
  * vim: set ft=rust:
  * vim: set ft=reason:
  */
-open Core.Std;
-
-open Yojson.Basic;
-
-open Async.Std;
-
-open Jenga_lib.Api;
-
-open NpmDep;
-
-open Merlin;
-
 open Utils;
+
+let module List = Core.Std.List;
+let module String = Core.Std.String;
+
+let module Dep = Jenga_lib.Api.Dep;
+let module Path = Jenga_lib.Api.Path;
+let module Glob = Jenga_lib.Api.Glob;
+let module Rule = Jenga_lib.Api.Rule;
+let module Action = Jenga_lib.Api.Action;
+let module Scheme = Jenga_lib.Api.Scheme;
 
 let libraryFileName = "lib.cma";
 
@@ -164,8 +162,8 @@ let compileSourcesScheme
     isTopLevelLib::isTopLevelLib => {
   /* This is the module alias file generated through `moduleAliasFileScheme`, that we said we're gonna `-open`
      during `ocamlc` */
-  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::libDir;
-  let thirdPartyOcamlfindLibNames = getThirdPartyOcamlfindLibs libDir::libDir;
+  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
+  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
 
   /** Compute Module Alias dependencies for dependencies only */
   let moduleAliasDep = Dep.all_unit (
@@ -384,20 +382,20 @@ let finalOutputsScheme sortedSourcePaths::sortedSourcePaths => {
   let cmosString = List.map cmos f::tsp |> String.concat sep::" ";
   let transitiveCmaPaths =
     List.map
-      sortedTransitiveThirdPartyNpmLibsIncludingSelf's
+      NpmDep.sortedTransitiveThirdPartyNpmLibsIncludingSelf's
       f::(fun libName => rel dir::(rel dir::buildDirRoot (tsl libName)) libraryFileName);
   let ocamlfindPackagesStr =
-    if (transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
+    if (NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
       ""
     } else {
       "-linkpkg -package " ^ (
-        List.map transitiveThirdPartyOcamlfindLibsIncludingSelf's f::tsl |> String.concat sep::","
+        List.map NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's f::tsl |> String.concat sep::","
       )
     };
 
   /** Hard Coded Rules for special packages */
   let extraFlags =
-    if (List.mem transitiveThirdPartyOcamlfindLibsIncludingSelf's (Lib "core")) {
+    if (List.mem NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's (Lib "core")) {
       "-thread -package threads"
     } else {
       ""
@@ -517,7 +515,7 @@ let scheme dir::dir => {
     Path.dirname dir == nodeModulesRoot
   ) {
     let libName = Lib (Path.basename dir);
-    dotMerlinScheme isTopLevelLib::false dir::dir libName::libName bscBackend::false
+    Merlin.dotMerlinScheme isTopLevelLib::false dir::dir libName::libName bscBackend::false
   } else {
     Scheme.no_rules
   }
