@@ -8,17 +8,15 @@ open Jenga_lib.Api;
 
 open Utils;
 
-let scheme dir::dir => {
-  ignore dir;
+let scheme dir::dir =>
   switch backend {
-  | "bucklescript" => Bucklescript.scheme dir::dir
+  | "bucklescript" => Scheme.all [Bucklescript.scheme dir::dir, Merlin.scheme dir::dir]
   | "jsoo"
-  | "native" => Native.scheme dir::dir
+  | "native" => Scheme.all [Native.scheme dir::dir, Merlin.scheme dir::dir]
   | _ =>
     print_endline "Invalid backend it should be one of [ native, jsoo, bucklescript ]";
     Scheme.no_rules
-  }
-};
+  };
 
 let env () => Env.create
   /* TODO: this doesn't traverse down to _build so I can't ask it to clean files there? */
@@ -33,4 +31,3 @@ let env () => Env.create
        }
      ) */
   scheme;
-/* let setup () => Deferred.return env; */
