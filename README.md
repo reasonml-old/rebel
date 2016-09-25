@@ -1,6 +1,6 @@
 # Rebel
 
-Build system that conforms to the ideal [Reason](https://github.com/facebook/reason) build spec found [here](https://github.com/facebook/reason/wiki/Reason-Project:-Proposal-For-Unifying-Local-Development-And-Package-Manement) and [here](https://github.com/facebook/reason/wiki/The-Ideal-Package-Sandbox) (summary below). Implemented with [Jenga](https://github.com/janestreet/jenga), Jane Street's all-purpose build system.
+Build system that conforms to the ideal [Reason](https://github.com/facebook/reason) build spec found [here](https://github.com/facebook/reason/wiki/Reason-Project:-Proposal-For-Unifying-Local-Development-And-Package-Management) and [here](https://github.com/facebook/reason/wiki/The-Ideal-Package-Sandbox) (summary below). Implemented with [Jenga](https://github.com/janestreet/jenga), Jane Street's all-purpose build system.
 
 ## Features
 
