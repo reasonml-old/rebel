@@ -42,6 +42,8 @@ let relD dir::dir str => Dep.path (Path.relative dir::dir str);
 
 let rel = Path.relative;
 
+let tsp = Path.to_string;
+
 /* Flipped the operands so that it is easier to use with |> */
 let bindD f dep => Dep.bind dep f;
 
@@ -62,11 +64,91 @@ let hasInterface sourcePaths::sourcePaths path =>
     sourcePaths
     f::(fun path' => isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path);
 
-let nodeModulesRoot = Path.relative dir::Path.the_root "node_modules";
+let nodeModulesRoot = rel dir::Path.the_root "node_modules";
 
-let buildDirRoot = Path.relative dir::Path.the_root "_build";
+let buildDirRoot = rel dir::Path.the_root "_build";
 
-let topSrcDir = Path.relative dir::Path.the_root "src";
+let topSrcDir = rel dir::Path.the_root "src";
+
+let getSubDirs dir::dir =>
+  Core.Core_sys.ls_dir (tsp dir) |>
+  List.filter f::(fun subDir => Core.Core_sys.is_directory_exn (tsp (rel dir::dir subDir))) |>
+  List.map f::(fun subDir => rel dir::dir subDir);
+
+let rec getNestedSubDirs dir::dir =>
+  List.fold
+    (getSubDirs dir)
+    init::[]
+    f::(
+      fun acc subDir => {
+        let nestedSubDirs = getNestedSubDirs dir::subDir;
+        acc @ [subDir] @ nestedSubDirs
+      }
+    );
+
+let getSourceFiles dir::dir => {
+  let allDirs = [dir] @ getNestedSubDirs dir::dir;
+  List.fold
+    allDirs
+    init::[]
+    f::(
+      fun acc subDir =>
+        (
+          Core.Core_sys.ls_dir (tsp subDir) |>
+          List.filter
+            f::(
+              fun file =>
+                String.is_suffix file suffix::".rei" ||
+                String.is_suffix file suffix::".mli" ||
+                String.is_suffix file suffix::".re" || String.is_suffix file suffix::".ml"
+            ) |>
+          List.map f::(fun file => rel dir::subDir file)
+        ) @ acc
+    )
+};
+
+
+/** Build Path Helpers **/
+let extractPackageName dir::dir => {
+  let pathComponents = String.split on::'/' (tsp dir);
+  List.nth_exn pathComponents 1
+};
+
+let convertBuildDirToLibDir buildDir::buildDir => {
+  let path = String.chop_prefix_exn (tsp buildDir) "_build/";
+  let pathComponents = String.split path on::'/';
+
+  /** prepare base src path */
+  let packageName = extractPackageName dir::buildDir;
+  let basePath =
+    packageName == "src" ?
+      rel dir::Path.the_root "src" : rel dir::(rel dir::nodeModulesRoot packageName) "src";
+
+  /** TODO write examples */
+  if (List.length pathComponents == 1) {
+    basePath
+  } else {
+    List.slice pathComponents 1 (List.length pathComponents) |> String.concat sep::"/" |>
+    rel dir::basePath
+  }
+};
+
+let convertLibDirToBuildDir libDir::libDir => {
+  let path = tsp libDir;
+  let pathComponents = String.split path on::'/';
+  if (List.nth_exn pathComponents 0 == "src") {
+    rel dir::buildDirRoot path
+  } else {
+    let packageName = extractPackageName dir::libDir;
+    let basePath = rel dir::buildDirRoot packageName;
+    if (List.length pathComponents == 3) {
+      basePath
+    } else {
+      List.slice pathComponents 3 (List.length pathComponents) |> String.concat sep::"/" |>
+      rel dir::basePath
+    }
+  }
+};
 
 
 /** Rebel-specific helpers **/
@@ -75,8 +157,6 @@ type moduleName =
 
 type libName =
   | Lib string;
-
-let tsp = Path.to_string;
 
 let tsm (Mod s) => s;
 
@@ -110,12 +190,13 @@ let bsNamespacedName libName::libName path::path => {
   tsm (bsLibToModule libName) ^ "__" ^ tsm (pathToModule path)
 };
 
-/* let topLibName = {
-     let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-     from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
-       fun name => Lib name
-     )
-   }; */
+let topPackageName = {
+  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
+  from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
+    fun name => Lib name
+  )
+};
+
 let topLibName = Lib "src";
 
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be

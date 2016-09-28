@@ -1,4 +1,5 @@
-.*
+.jenga
+
 !.gitignore
 !.npmignore
 !.merlin
