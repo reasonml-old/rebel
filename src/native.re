@@ -308,7 +308,7 @@ let compileSourcesScheme
             firstPartyArtifactDeps
           };
 
-        /** The overall dependecies include the js artifacts of the both self and third party
+        /** The overall dependencies include the js artifacts of the both self and third party
             and interface artifact if an interface exits **/
         let deps = Dep.all_unit [Dep.path path, moduleAliasDep, ...firstPartyArtifactDeps];
 
