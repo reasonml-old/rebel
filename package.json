@@ -3,13 +3,13 @@
   "description": "Build system for reason that conforms to the magic-build spec. Implemented with Jenga.",
   "dependencies": {
     "dependency-env": "https://github.com/npm-ml/dependency-env.git",
-    "jenga": "https://github.com/npm-opam/jenga.git",
     "js_of_ocaml-bin": "https://github.com/reasonml/js_of_ocaml-bin.git",
+    "@opam-alpha/jenga": "*",
+    "@opam-alpha/ocamlfind": "*",
+    "@opam-alpha/yojson": "*",
     "nopam": "https://github.com/yunxing/nopam.git",
     "ocamlBetterErrors": "0.0.10",
-    "ocamlfind": "https://github.com/npm-opam/ocamlfind.git",
-    "reason": "https://github.com/facebook/reason.git",
-    "yojson": "https://github.com/npm-opam/yojson.git"
+    "reason": "https://github.com/facebook/reason.git"
   },
   "devDependencies": {},
   "exportedEnvVars": {
