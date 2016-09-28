@@ -40,27 +40,21 @@ let ocamlDep sourcePath::sourcePath => {
 };
 
 /* Get only the dependencies on sources in the current library. */
-let ocamlDepCurrentSources sourcePath::sourcePath => {
-  let srcDir = Path.dirname sourcePath;
+let ocamlDepCurrentSources sourcePath::sourcePath paths::paths =>
   ocamlDep sourcePath::sourcePath |>
-  bindD (
-    fun (original, deps) =>
-      Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}") |>
-      mapD (
-        fun sourcePaths => {
-          let originalModule = pathToModule original;
-          /* Dedupe, because we might have foo.re and foo.rei */
-          let sourceModules = List.map sourcePaths f::pathToModule |> List.dedup;
-          /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
-             itself, which means that Foo either comes from a third-party module (which we can ignore
-             here), or is a nested module from an `open`ed module, which ocamldep would have detected and
-             returned in this list. */
-          List.filter deps f::(fun m => m != originalModule) |>
-          List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
-        }
-      )
-  )
-};
+  mapD (
+    fun (original, deps) => {
+      let originalModule = pathToModule original;
+      /* Dedupe, because we might have foo.re and foo.rei */
+      let sourceModules = List.map paths f::pathToModule |> List.dedup;
+      /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
+         itself, which means that Foo either comes from a third-party module (which we can ignore
+         here), or is a nested module from an `open`ed module, which ocamldep would have detected and
+         returned in this list. */
+      List.filter deps f::(fun m => m != originalModule) |>
+      List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
+    }
+  );
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
    into a foo.ml file whose content is:
@@ -150,7 +144,7 @@ let compileSourcesScheme
 
   /** Compute Module Alias dependencies for dependencies only */
   let moduleAliasDep = Dep.all_unit (
-    (isTopLevelLib ? [] : ["cmi", "cmj", "cmt", "ml"]) |>
+    (isTopLevelLib ? [] : ["cmi", "cmj", "cmt"]) |>
     List.map f::(fun extension => relD dir::buildDir (tsm (libToModule libName) ^ "." ^ extension))
   );
 
@@ -183,7 +177,7 @@ let compileSourcesScheme
               to build the target */
           /* FIXME the js dependencies are Temporary and can just be cmj dependencies once
              bucklescript bug is removed */
-          Dep.glob_listing (Glob.create dir::thirdPartySrcPath "*.{re,ml}") |>
+          Dep.all (getSourceFiles dir::thirdPartySrcPath |> List.map f::Dep.return) |>
           bindD (
             fun thirdPartySources => Dep.all_unit (
               List.map
@@ -198,7 +192,7 @@ let compileSourcesScheme
 
   /** Compute build graph (targets, dependencies) for the current path */
   let compilePathScheme path =>
-    ocamlDepCurrentSources sourcePath::path |>
+    ocamlDepCurrentSources sourcePath::path paths::sourcePaths |>
     mapD (
       fun firstPartyDeps => {
         let isInterface' = isInterface path;
@@ -318,7 +312,7 @@ let compileLibScheme
     isTopLevelLib::isTopLevelLib
     srcDir::srcDir
     buildDir::buildDir =>
-  Dep.glob_listing (Glob.create dir::srcDir "*.{re,rei,ml,mli}") |>
+  Dep.all (getSourceFiles dir::srcDir |> List.map f::Dep.return) |>
   mapD (
     fun unsortedPaths => {
       /* To prevent name collisions between src files and other modules,
@@ -348,11 +342,7 @@ let scheme dir::dir =>
     let libName = Lib (Path.basename dir);
     let isTopLevelLib = libName == topLibName;
     let srcDir = isTopLevelLib ? topSrcDir : rel dir::(rel dir::nodeModulesRoot dirName) "src";
-    compileLibScheme
-      srcDir::srcDir
-      isTopLevelLib::isTopLevelLib
-      libName::libName
-      buildDir::dir
+    compileLibScheme srcDir::srcDir isTopLevelLib::isTopLevelLib libName::libName buildDir::dir
   } else {
     Scheme.no_rules
   };
