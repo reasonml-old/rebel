@@ -115,7 +115,7 @@ FLG -w -30 -w -40 %s
         (Path.reach_from dir::dir (rel dir::buildDirRoot "*"))
         bucklescriptBuildArtifacts
         (thirdPartyOcamlfindLibNames |> List.map f::tsl |> String.concat sep::" ")
-        (isTopLevelLib ? "" : tsm (libToModule libName))
+        (isTopLevelLib && bscBackend ? "" : "-open " ^ tsm (libToModule libName))
         (bscBackend ? "FLG -ppx " ^ bsppxAbsolutePath : "")
         customConfig;
     Action.save dotMerlinContent target::dotMerlinPath
