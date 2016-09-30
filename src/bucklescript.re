@@ -16,46 +16,6 @@ let jsOutput =
   (targets == [] ? ["index"] : targets) |>
   List.map f::(fun t => rel dir::(rel dir::buildDirRoot (tsl topLibName)) (t ^ ".js"));
 
-/* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
-   ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module
-   tracking in the presence of `open` */
-let ocamlDep sourcePath::sourcePath => {
-  let flag = isInterface sourcePath ? "-intf" : "-impl";
-  /* seems like refmt intelligently detects source code type (re/ml) */
-  let getDepAction () =>
-    bashf
-      "ocamldep -pp refmt -ppx node_modules/.bin/bsppx -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s 2>&1; (exit ${PIPESTATUS[0]})"
-      flag
-      (tsp sourcePath);
-  let action = Dep.action_stdout (Dep.path sourcePath |> mapD getDepAction);
-  let processRawString string =>
-    switch (String.strip string |> String.split on::':') {
-    | [original, deps] => (
-        rel dir::Path.the_root original,
-        String.split deps on::' ' |> List.filter f::nonBlank |> List.map f::(fun m => Mod m)
-      )
-    | _ => failwith "expected exactly one ':' in ocamldep output line"
-    };
-  Dep.map action processRawString
-};
-
-/* Get only the dependencies on sources in the current library. */
-let ocamlDepCurrentSources sourcePath::sourcePath paths::paths =>
-  ocamlDep sourcePath::sourcePath |>
-  mapD (
-    fun (original, deps) => {
-      let originalModule = pathToModule original;
-      /* Dedupe, because we might have foo.re and foo.rei */
-      let sourceModules = List.map paths f::pathToModule |> List.dedup;
-      /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
-         itself, which means that Foo either comes from a third-party module (which we can ignore
-         here), or is a nested module from an `open`ed module, which ocamldep would have detected and
-         returned in this list. */
-      List.filter deps f::(fun m => m != originalModule) |>
-      List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
-    }
-  );
-
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
    into a foo.ml file whose content is:
    module A = Foo__A;
@@ -192,7 +152,7 @@ let compileSourcesScheme
 
   /** Compute build graph (targets, dependencies) for the current path */
   let compilePathScheme path =>
-    ocamlDepCurrentSources sourcePath::path paths::sourcePaths |>
+    OcamlDep.ocamlDepCurrentSources sourcePath::path paths::sourcePaths |>
     mapD (
       fun firstPartyDeps => {
         let isInterface' = isInterface path;
