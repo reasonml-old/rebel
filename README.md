@@ -12,29 +12,26 @@ Build system that conforms to the ideal [Reason](https://github.com/facebook/rea
 - Generates JavaScript output through [js_of_ocaml](http://ocsigen.org/js_of_ocaml/) or [bucklescript](https://github.com/bloomberg/bucklescript).
 - Peace-of-mind "wipe the whole world" : just remove `_build/`.
 - Share your work through the normal npm workflow: `npm publish`.
+- Integrated [BetterErrors](https://github.com/npm-ml/BetterErrors).
 
 **Coming soon**:
-- Integrated [BetterErrors](https://github.com/npm-ml/BetterErrors).
 - Generates the correct .merlin files for [Merlin](https://github.com/the-lambda-church/merlin), for editor assistance.
 - Generates utop/rtop bootstrap file.
 - Generates documentation based on `mli`/`rei` interface files.
-- Easier installation: bundle Jenga, etc.
+- Easier installation: precompiled binary, etc.
 
 ## "Ideal Reason Project" Spec
 
-- Needs a flat `src/` directory.
+- All the files should under `src/` directory.
 - Third-party libraries go into `node_modules/`, flat list of all transitive dependencies.
 - Third-party libraries names of the format `foo-bar` are transformed into FooBar when used as module name (source file names aren't allowed to have kebab-case).
-- Every library (including the current one) needs a package.json that lists its npm dependencies in `dependencies` (as usual). OPAM/ocamlfind dependencies go into `rebel.ocamlfindDependencies`, same format as `dependencies`.
-- Refer to your own files e.g. `myFoo` as the module `MyFoo` in other files in the current project.
+- Every library (including the current one) needs a package.json that lists its npm dependencies in `dependencies` (as usual) and it needs to have `rebel` key. OPAM/ocamlfind dependencies go into `rebel.ocamlfindDependencies`, same format as `dependencies`.
+- Refer to your own files e.g. `src/**/myFoo.re` as the module `MyFoo` in other files in the current project i.e, the path of the file doesn't matter.
 - Refer to third-party files e.g. `node_modules/bar/src/index.re` as `Bar.Index` in the current project.
 
 ## For Consumers
 
-- `npm install --save-dev reasonml/rebel`
-- Write some files in your `src/`, or install some spec compliant (see above) npm packages.
-- `./node_modules/.bin/rebel`. :tada: :tada:!
-- Binary in `_build/src/app.out`
+Checkout this [example project](https://github.com/reasonml/RebelExampleProject)
 
 ## Rebel Config
 
