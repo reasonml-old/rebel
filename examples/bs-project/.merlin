@@ -35,6 +35,8 @@ PKG
 # .merlin at https://github.com/reasonml/rebel
 FLG -w -30 -w -40 
 
+# Currently the we use absolute path instead of relative path for bsppx.exe
+# due to bug in merlin but this will be fixed in future.
 FLG -ppx /home/vramana/Documents/reasonml/rebel/examples/bs-project/node_modules/bs-platform/bin/bsppx.exe
 
 # User Custom config here
