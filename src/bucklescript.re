@@ -73,7 +73,7 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
 
          -o: output name
          */
-      "bsc -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
+      "bsc.exe -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
       (Path.to_string sourcePath)
       (Path.to_string (name ".cmj"));
   /* TODO: do we even need the cmj file here? */
@@ -186,13 +186,13 @@ let compileSourcesScheme
           bashf
             (
               if isInterface' {
-                "bsc -g %s -pp refmt -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
+                "bsc.exe -g %s -pp refmt -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
               } else if (
                 hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
               ) {
-                "bsc -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+                "bsc.exe -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
               } else {
-                "bsc -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+                "bsc.exe -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
               }
             )
             ocamlfindPackagesStr
@@ -211,13 +211,11 @@ let compileSourcesScheme
           } else {
             let extns =
               if hasInterface' {
-                [".cmj", ".cmt"]
+                [".cmj", ".cmt", ".js"]
               } else {
-                [".cmi", ".cmj", ".cmt"]
+                [".cmi", ".cmj", ".cmt", ".js"]
               };
-            (isTopLevelLib ? List.map f::simplePath extns : List.map f::namespacedPath extns) @ [
-              simplePath ".js"
-            ]
+            isTopLevelLib ? List.map f::simplePath extns : List.map f::namespacedPath extns
           };
 
         /** FIXME is this comment valid?
@@ -252,10 +250,10 @@ let compileSourcesScheme
         /** Workaround for BuckleScript bug https://github.com/bloomberg/bucklescript/issues/757
             Action to copy the file to match require call */
         let copyTarget = rel dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
-        let copyAction = bashf "cp %s %s" (tsp (simplePath ".js")) (tsp copyTarget);
+        let copyAction = bashf "cp %s %s" (tsp (namespacedPath ".js")) (tsp copyTarget);
         let copyRule =
           Rule.create
-            targets::[copyTarget] (Dep.path (simplePath ".js") |> mapD (fun () => copyAction));
+            targets::[copyTarget] (Dep.path (namespacedPath ".js") |> mapD (fun () => copyAction));
 
         /** Compile JS from BuckleScript and copy the file to match require call */
         Scheme.rules [
