@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "rebel -show-actions-run-verbose -verbose -show-error-dependency-paths -brief-error-summary -show-buildable-discovery"
+    "start": "eval $(dependencyEnv) && rebel -show-actions-run-verbose -verbose -show-error-dependency-paths -brief-error-summary -show-buildable-discovery"
   },
   "keywords": [],
   "author": "",
@@ -18,9 +18,7 @@
   },
   "dependencies": {
     "Rexpress": "github:vramana/Rexpress",
+    "bs-platform": "^1.1.2",
     "remath": "github:vramana/remath"
-  },
-  "devDependencies": {
-    "bs-platform": "^1.0.1"
   }
 }
