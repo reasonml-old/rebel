@@ -138,7 +138,7 @@ let scheme dir::dir =>
   if (dir == Path.the_root) {
     let toplevelScheme =
       dotMerlinScheme
-        isTopLevelLib::true dir::dir libName::topLibName bscBackend::(backend == "bucklescript");
+        isTopLevelLib::true dir::dir libName::topLibName bscBackend::(rebelConfig.backend == "bucklescript");
     Scheme.all [
       Scheme.rules [Rule.default dir::dir [relD dir::Path.the_root ".merlin"]],
       toplevelScheme
@@ -148,7 +148,7 @@ let scheme dir::dir =>
   ) {
     let libName = Lib (Path.basename dir);
     dotMerlinScheme
-      isTopLevelLib::false dir::dir libName::libName bscBackend::(backend == "bucklescript")
+      isTopLevelLib::false dir::dir libName::libName bscBackend::(rebelConfig.backend == "bucklescript")
   } else {
     Scheme.no_rules
   };

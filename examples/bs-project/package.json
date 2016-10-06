@@ -10,10 +10,17 @@
   "author": "",
   "license": "ISC",
   "rebel": {
-    "backend": "bucklescript",
     "targets": [
-      "client",
-      "server"
+      {
+        "target": "client",
+        "engine": "bucklescript",
+        "entry": "src/client.re"
+      },
+      {
+        "target": "server",
+        "engine": "bucklescript",
+        "entry": "src/server.re"
+      }
     ]
   },
   "dependencies": {

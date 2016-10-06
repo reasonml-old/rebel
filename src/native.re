@@ -391,6 +391,7 @@ let finalOutputsScheme buildDir::buildDir libName::libName sortedSourcePaths::so
       (transitiveCmaPaths |> List.map f::tsp |> String.concat sep::" ")
       (tsp moduleAliasCmoPath)
       cmosString;
+  let backend = rebelConfig.backend;
   let nativeRule =
     /* We check here for jsoo because jsoo needs binaryOutput */
     backend == "native" || backend == "jsoo" ?
@@ -458,7 +459,7 @@ let compileLibScheme
 let scheme dir::dir =>
   if (dir == Path.the_root) {
     let defaultRule =
-      switch backend {
+      switch rebelConfig.backend {
       | "jsoo" => [Dep.path jsOutput]
       | "native" => [Dep.path binaryOutput]
       | _ => []

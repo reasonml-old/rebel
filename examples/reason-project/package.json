@@ -14,7 +14,6 @@
     "remath": "https://github.com/vramana/remath.git"
   },
   "rebel": {
-    "backend": "native",
     "ocamlfindDependencies": [
       "core"
     ]
