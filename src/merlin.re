@@ -37,6 +37,8 @@ let dotMerlinScheme
     Path.reach_from dir::dir (rel dir::nodeModulesRoot "bs-platform/lib/ocaml");
   let bucklescriptBuildArtifacts =
     bscBackend ? "# Bucklescript build artifacts\nB " ^ bsBuildArtifactsPath : "";
+  let merlinWorkAroundComment =
+    "# Currently the we use absolute path instead of relative path for bsppx.exe\n" ^ "# due to bug in merlin but this will be fixed in future.";
   let bsppxAbsolutePath = Path.to_absolute_string (
     rel dir::Path.the_root "node_modules/bs-platform/bin/bsppx.exe"
   );
@@ -105,8 +107,7 @@ PKG %s
 # .merlin at https://github.com/reasonml/rebel
 FLG -w -30 -w -40 %s
 
-# Currently the we use absolute path instead of relative path for bsppx.exe
-# due to bug in merlin but this will be fixed in future.
+%s
 %s
 
 # User Custom config here
@@ -118,6 +119,7 @@ FLG -w -30 -w -40 %s
         bucklescriptBuildArtifacts
         (thirdPartyOcamlfindLibNames |> List.map f::tsl |> String.concat sep::" ")
         (isTopLevelLib && bscBackend ? "" : "-open " ^ tsm (libToModule libName))
+        (bscBackend ? merlinWorkAroundComment : "")
         (bscBackend ? "FLG -ppx " ^ bsppxAbsolutePath : "")
         customConfig;
     Action.save dotMerlinContent target::dotMerlinPath
@@ -138,7 +140,10 @@ let scheme dir::dir =>
   if (dir == Path.the_root) {
     let toplevelScheme =
       dotMerlinScheme
-        isTopLevelLib::true dir::dir libName::topLibName bscBackend::(rebelConfig.backend == "bucklescript");
+        isTopLevelLib::true
+        dir::dir
+        libName::topLibName
+        bscBackend::(rebelConfig.backend == "bucklescript");
     Scheme.all [
       Scheme.rules [Rule.default dir::dir [relD dir::Path.the_root ".merlin"]],
       toplevelScheme
@@ -148,7 +153,10 @@ let scheme dir::dir =>
   ) {
     let libName = Lib (Path.basename dir);
     dotMerlinScheme
-      isTopLevelLib::false dir::dir libName::libName bscBackend::(rebelConfig.backend == "bucklescript")
+      isTopLevelLib::false
+      dir::dir
+      libName::libName
+      bscBackend::(rebelConfig.backend == "bucklescript")
   } else {
     Scheme.no_rules
   };

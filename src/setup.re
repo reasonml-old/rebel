@@ -14,7 +14,8 @@ let scheme dir::dir => {
   switch backend {
   | "bucklescript" => Scheme.all [Bucklescript.scheme dir::dir, Merlin.scheme dir::dir]
   | "jsoo"
-  | "native" => Scheme.all [Native.scheme dir::dir, Merlin.scheme dir::dir]
+  | "byte"
+  | "native" => Scheme.all [Ocaml.scheme dir::dir, Merlin.scheme dir::dir]
   | _ =>
     print_endline "Invalid backend it should be one of [ native, jsoo, bucklescript ]";
     Scheme.no_rules
