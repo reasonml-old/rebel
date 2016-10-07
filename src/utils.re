@@ -226,51 +226,39 @@ let topologicalSort graph => {
 };
 
 /* package.json helpers */
-let targets = {
-  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-  let targets' =
-    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
-    Util.to_option (fun a => a |> Util.member "targets");
-  switch targets' {
-  | Some (`List _ as a) => List.map f::Util.to_string (Util.to_list a)
-  | None => []
-  | _ => []
-  }
-};
+type target = {target: string, engine: string, entry: string};
 
-let backend = {
-  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-  let optBackend =
-    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
-    Util.to_option (fun a => a |> Util.member "backend");
-  switch optBackend {
-  | Some (`String _ as a) =>
-    let backend' = Util.to_string a;
-    List.mem ["native", "jsoo", "bucklescript"] backend' ? backend' : "native"
-  | _ => "native"
-  }
-};
+type config = {targets: list target, backend: string};
 
-let bscFlags = {
+let rebelConfig = {
   let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-  let flags =
-    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
-    Util.to_option (fun a => a |> Util.member "bscFlags");
-  switch flags {
-  | Some (`String _ as a) => Util.to_string a
-  | _ => ""
-  }
-};
+  let configFile = from_file (Path.to_string packageJsonPath);
+  let targetsField =
+    configFile |> Util.member "rebel" |> Util.to_option (fun a => a |> Util.member "targets");
+  let parseTarget t => {
+    target: Util.member "entry" t |> Util.to_string,
+    engine: Util.member "engine" t |> Util.to_string,
+    entry: Util.member "entry" t |> Util.to_string
+  };
+  let targets =
+    switch targetsField {
+    | Some (`List ts) => List.map f::parseTarget ts
+    | _ => [{target: "default", engine: "native", entry: "src/Index.re"}]
+    };
 
-let ocamlcFlags = {
-  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-  let flags =
-    from_file (Path.to_string packageJsonPath) |> Util.member "rebel" |>
-    Util.to_option (fun a => a |> Util.member "ocamlcFlags");
-  switch flags {
-  | Some (`String _ as a) => Util.to_string a
-  | _ => ""
-  }
+  /** We only support one backend at a time and  multiple entry points for bucklescript only. */
+  let backend =
+    if (List.for_all f::(fun t => t.engine == "bucklescript") targets && List.length targets > 0) {
+      "bucklescript"
+    } else if (
+      List.length targets == 1
+    ) {
+      let t = List.nth_exn targets 0;
+      t.engine
+    } else {
+      ""
+    };
+  {targets, backend}
 };
 
 let readFile path::path =>

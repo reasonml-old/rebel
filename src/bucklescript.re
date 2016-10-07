@@ -19,7 +19,12 @@ let module Scheme = Jenga_lib.Api.Scheme;
 open Utils;
 
 let jsOutput =
-  (targets == [] ? ["index"] : targets) |>
+  (
+    rebelConfig.targets == [] ?
+      ["index"] :
+      List.map
+        f::(fun t => t.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir) rebelConfig.targets
+  ) |>
   List.map f::(fun t => rel dir::(rel dir::buildDirRoot (tsl topLibName)) (t ^ ".js"));
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them

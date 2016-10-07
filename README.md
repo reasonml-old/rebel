@@ -35,8 +35,7 @@ Checkout this [example project](https://github.com/reasonml/RebelExampleProject)
 
 ## Rebel Config
 
-- backend (string): One of "jsoo", "native", "bucklescript".
-- targets ([string]): entry points for reason application. Currently only works with bucklescript.
+- targets ([ { target: string, engine: string, entry: string } ]): entry points for reason application. Multiple entry points currently only works with bucklescript. If no value is provided, the default value is `[{ target: "default", engine: "native", entry: "src/Index.re" }]`.
 - ocamlfindDependencies (array) : list of ocaml packages that work with ocamlfind
 
 ### More Info

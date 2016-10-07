@@ -8,7 +8,9 @@ open Jenga_lib.Api;
 
 open Utils;
 
-let scheme dir::dir =>
+let scheme dir::dir => {
+  ignore dir;
+  let backend = rebelConfig.backend;
   switch backend {
   | "bucklescript" => Scheme.all [Bucklescript.scheme dir::dir, Merlin.scheme dir::dir]
   | "jsoo"
@@ -16,7 +18,8 @@ let scheme dir::dir =>
   | _ =>
     print_endline "Invalid backend it should be one of [ native, jsoo, bucklescript ]";
     Scheme.no_rules
-  };
+  }
+};
 
 let env () => Env.create
   /* TODO: this doesn't traverse down to _build so I can't ask it to clean files there? */
