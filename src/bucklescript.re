@@ -4,11 +4,17 @@
  */
 open Core.Std;
 
-open Jenga_lib.Api;
+let module Dep = Jenga_lib.Api.Dep;
 
-open Merlin;
+let module Path = Jenga_lib.Api.Path;
 
-open NpmDep;
+let module Glob = Jenga_lib.Api.Glob;
+
+let module Rule = Jenga_lib.Api.Rule;
+
+let module Action = Jenga_lib.Api.Action;
+
+let module Scheme = Jenga_lib.Api.Scheme;
 
 open Utils;
 
@@ -92,8 +98,8 @@ let compileSourcesScheme
     isTopLevelLib::isTopLevelLib => {
   /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
      to recompile the dependent modules. Win. */
-  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::libDir;
-  let thirdPartyOcamlfindLibNames = getThirdPartyOcamlfindLibs libDir::libDir;
+  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
+  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
 
   /** FIXME Doesn't work with core_kernel **/
   let ocamlfindPackagesStr =

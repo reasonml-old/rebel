@@ -2,9 +2,10 @@
  * vim: set ft=rust:
  * vim: set ft=reason:
  */
-
 open Core.Std;
+
 open Yojson.Basic;
+
 open Jenga_lib;
 
 /*
@@ -411,9 +412,7 @@ let buildCommand toplevel::toplevel run::run () =>
     (Command.Param.map config_param f::(fun config () => run config));
 
 let main argv::argv=(Array.to_list Sys.argv) run::run () => {
-  let toplevel_group = [
-    ("build", buildCommand toplevel::false run::run ())
-  ];
+  let toplevel_group = [("build", buildCommand toplevel::false run::run ())];
   let toplevel_group_names = ["help", "version", ...List.map toplevel_group f::fst];
   switch argv {
   | [_, s, ..._] when List.mem toplevel_group_names s =>
@@ -479,7 +478,6 @@ let find_ancestor_directory_containing one_of::one_of => {
     COPIED CODE END
   =====================================================
  */
-
 open Jenga_lib.Build.Jr_spec;
 
 let root_markers = [".git", ".hg", "package.json"] |> List.map f::Path.Rel.create;

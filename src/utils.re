@@ -272,3 +272,9 @@ let ocamlcFlags = {
   | _ => ""
   }
 };
+
+let readFile path::path =>
+  switch (Core.Core_sys.is_file (tsp path)) {
+  | `Yes => In_channel.read_all (tsp path)
+  | _ => ""
+  };
