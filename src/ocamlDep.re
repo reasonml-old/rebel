@@ -15,8 +15,8 @@ open Utils;
 /* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module
    tracking in the presence of `open` */
-let ocamlDep sourcePath::sourcePath => {
-  let flag = isInterface sourcePath ? "-intf" : "-impl";
+let ocamlDep source::source => {
+  let flag = isInterface source ? "-intf" : "-impl";
   let ppx = rebelConfig.backend == "bucklescript" ? "-ppx bsppx.exe" : "";
   let berror = rebelConfig.backend == "bucklescript" ? "" : "| berror";
   /* seems like refmt intelligently detects source code type (re/ml) */
@@ -25,9 +25,9 @@ let ocamlDep sourcePath::sourcePath => {
       "ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s 2>&1 %s; (exit ${PIPESTATUS[0]})"
       ppx
       flag
-      (tsp sourcePath)
+      (tsp source)
       berror;
-  let action = Dep.action_stdout (Dep.path sourcePath |> mapD getDepAction);
+  let action = Dep.action_stdout (Dep.path source |> mapD getDepAction);
   let processRawString string =>
     switch (String.strip string |> String.split on::':') {
     | [original, deps] => (
@@ -41,10 +41,10 @@ let ocamlDep sourcePath::sourcePath => {
 
 /* Get only the dependencies on sources in the current library. */
 let ocamlDepCurrentSources sourcePath::sourcePath paths::paths =>
-  ocamlDep sourcePath::sourcePath |>
+  ocamlDep source::sourcePath |>
   mapD (
-    fun (original, deps) => {
-      let originalModule = pathToModule original;
+    fun (source, deps) => {
+      let originalModule = pathToModule source;
       /* Dedupe, because we might have foo.re and foo.rei */
       let sourceModules = List.map paths f::pathToModule |> List.dedup;
       /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
@@ -53,6 +53,50 @@ let ocamlDepCurrentSources sourcePath::sourcePath paths::paths =>
          returned in this list. */
       List.filter deps f::(fun m => m != originalModule) |>
       List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
+    }
+  );
+
+/* Get only the dependencies on sources in the current library. */
+let ocamlDepSource
+    sourcePath::sourcePath
+    paths::paths
+    npmPkgs::npmPkgs
+    ocamlfindPkgs::ocamlfindPkgs =>
+  ocamlDep source::sourcePath |>
+  mapD (
+    fun (source, deps) => {
+      let originalModule = pathToModule source;
+
+      /** Dedupe, because we might have foo.re and foo.rei */
+      let sourceModules = List.map paths f::pathToModule |> List.dedup;
+      let npmPkgsModules = List.map npmPkgs f::libToModule;
+      let ocamlfindPkgsModules = List.map ocamlfindPkgs f::libToModule;
+
+      /** If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
+          itself, which means that Foo either comes from a third-party module (which we can ignore
+          here), or is a nested module from an `open`ed module, which ocamldep would have detected and
+          returned in this list. */
+      List.filter deps f::(fun m => m != originalModule) |>
+      List.fold
+        init::([], [], [])
+        f::(
+          fun (firstParty, npmPkgs', ocamlfindPkgs') m =>
+            if (List.exists sourceModules f::(fun m' => m == m')) {
+              (firstParty @ [m], npmPkgs', ocamlfindPkgs')
+            } else if (
+              List.exists npmPkgsModules f::(fun m' => m == m')
+            ) {
+              let pos = List.foldi init::0 f::(fun i acc m' => m' == m ? acc + i : acc) npmPkgsModules;
+              (firstParty, npmPkgs' @ [ List.nth_exn npmPkgs pos ], ocamlfindPkgs')
+            } else if (
+              List.exists ocamlfindPkgsModules f::(fun m' => m == m')
+            ) {
+              let pos = List.foldi init::0 f::(fun i acc m' => m' == m ? acc + i : acc) ocamlfindPkgsModules;
+              (firstParty, npmPkgs', ocamlfindPkgs' @ [ List.nth_exn ocamlfindPkgs pos ])
+            } else {
+              (firstParty, npmPkgs', ocamlfindPkgs')
+            }
+        )
     }
   );
 

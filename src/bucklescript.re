@@ -106,13 +106,6 @@ let compileSourcesScheme
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
   let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
 
-  /** FIXME Doesn't work with core_kernel **/
-  let ocamlfindPackagesStr =
-    switch thirdPartyOcamlfindLibNames {
-    | [] => ""
-    | libs => "-bs-package-include " ^ (libs |> List.map f::tsl |> String.concat sep::",")
-    };
-
   /** Compute Module Alias dependencies for dependencies only */
   let moduleAliasDep = Dep.all_unit (
     (isTopLevelLib ? [] : ["cmi", "cmj", "cmt"]) |>
@@ -123,49 +116,43 @@ let compileSourcesScheme
       source files being compiled. This is very coarse since in reality, we only depend on a few source
       files of these third-party libs. But ocamldep isn't granular enough to give us this information
       yet. */
-  let thirdPartiesArtifactsDep = Dep.all_unit (
-    List.map
-      thirdPartyNpmLibs
-      f::(
-        fun libName => {
-          /* if one of a third party library foo's source is Hi.re, then it resides in
-             `node_modules/foo/src/Hi.re`, and its cmj artifacts in `_build/foo/Foo__Hi.cmj` */
-          let thirdPartySrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
-          let thirdPartyBuildPathD path::path ext::ext =>
-            relD
-              dir::(rel dir::buildDirRoot (tsl libName))
-              (namespacedName libName::libName path::path ^ ext);
+  let computeNpmLibArtifacts libName => {
+    /* if one of a third party library foo's source is Hi.re, then it resides in
+       `node_modules/foo/src/Hi.re`, and its cmj artifacts in `_build/foo/Foo__Hi.cmj` */
+    let thirdPartySrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
+    let thirdPartyBuildPath path::path ext::ext =>
+      relD
+        dir::(rel dir::buildDirRoot (tsl libName))
+        (namespacedName libName::libName path::path ^ ext);
 
-          /** FIXME Temporary workaround for bucklescript bug */
-          let bsThirdPartyBuildPathD path::path ext::ext =>
-            relD
-              dir::(rel dir::buildDirRoot (tsl libName))
-              (bsNamespacedName libName::libName path::path ^ ext);
+    /** FIXME Temporary workaround for bucklescript bug */
+    let bsThirdPartyBuildPath path::path ext::ext =>
+      relD
+        dir::(rel dir::buildDirRoot (tsl libName))
+        (bsNamespacedName libName::libName path::path ^ ext);
 
-          /** No need to glob `.rei/.mli`s here. We're only getting the file names to
-              construct cmj paths. We depend on cmj artifacts rather cmi artifacts because
-              cmi articfacts can be just generated with interface files and it is not sufficient
-              to build the target */
-          /* FIXME the js dependencies are Temporary and can just be cmj dependencies once
-             bucklescript bug is removed */
-          Dep.all (getSourceFiles dir::thirdPartySrcPath |> List.map f::Dep.return) |>
-          bindD (
-            fun thirdPartySources => Dep.all_unit (
-              List.map
-                thirdPartySources f::(fun path => thirdPartyBuildPathD path::path ext::".cmj") @
-              List.map
-                thirdPartySources f::(fun path => bsThirdPartyBuildPathD path::path ext::".js")
-            )
-          )
-        }
-      )
-  );
+    /** No need to glob `.rei/.mli`s here. We're only getting the file names to
+        construct cmj paths. We depend on cmj artifacts rather cmi artifacts because
+        cmi articfacts can be just generated with interface files and it is not sufficient
+        to build the target */
+    /* FIXME the js dependencies are Temporary and can just be cmj dependencies once
+       bucklescript bug is removed */
+    getSourceFiles dir::thirdPartySrcPath |> (
+      fun thirdPartySources =>
+        List.map thirdPartySources f::(fun path => thirdPartyBuildPath path::path ext::".cmj") @
+        List.map thirdPartySources f::(fun path => bsThirdPartyBuildPath path::path ext::".js")
+    ) |> Dep.all_unit
+  };
 
   /** Compute build graph (targets, dependencies) for the current path */
   let compilePathScheme path =>
-    OcamlDep.ocamlDepCurrentSources sourcePath::path paths::sourcePaths |>
+    OcamlDep.ocamlDepSource
+      sourcePath::path
+      paths::sourcePaths
+      npmPkgs::thirdPartyNpmLibs
+      ocamlfindPkgs::thirdPartyOcamlfindLibNames |>
     mapD (
-      fun firstPartyDeps => {
+      fun (firstPartyDeps, npmPkgs, ocamlfindPkgs) => {
         let isInterface' = isInterface path;
         let hasInterface' = hasInterface sourcePaths::sourcePaths path;
 
@@ -176,8 +163,16 @@ let compileSourcesScheme
 
         /** flag to include all the dependencies build dir's **/
         let includeDir =
-          thirdPartyNpmLibs |> List.map f::(fun libName => "-I " ^ tsp (rel dir::buildDirRoot (tsl libName))) |>
+          npmPkgs |> List.map f::(fun libName => "-I " ^ tsp (rel dir::buildDirRoot (tsl libName))) |>
           String.concat sep::" ";
+
+        /** Flag for including ocamlfind packages */
+        let ocamlfindPackagesStr =
+          switch ocamlfindPkgs {
+          | [] => ""
+          | libs => "-bs-package-include " ^ (libs |> List.map f::tsl |> String.concat sep::",")
+          };
+
 
         /** Debug Info */
         /* print_endline ("Path: " ^ tsp path);
@@ -232,30 +227,31 @@ let compileSourcesScheme
         /** FIXME is this comment valid?
             compiling here only needs cmjs. If the interface signature doesn't change, ocaml doesn't need
             to recompile the dependent modules. Win. */
-        let firstPartyArtifactDeps =
+        let firstPartyArtifacts =
           sourcePaths |>
           List.filter
             f::(fun path => List.exists firstPartyDeps f::(fun m => m == pathToModule path)) |>
           List.map f::(fun path => relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmj"));
-        let firstPartyArtifactDeps =
+        let firstPartyArtifacts =
           if hasInterface' {
             [
               /* We're a source file with an interface; include our own cmi as a dependency (our interface
                  file should compile before ourselves). */
               relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmi"),
-              ...firstPartyArtifactDeps
+              ...firstPartyArtifacts
             ]
           } else {
-            firstPartyArtifactDeps
+            firstPartyArtifacts
           };
+        let thirdPartyArtifacts = List.map npmPkgs f::computeNpmLibArtifacts |> Dep.all_unit;
 
         /** The overall dependecies include the cmj artifacts of the both self and third party
             and interface artifact if an interface exits **/
         let deps = Dep.all_unit [
           Dep.path path,
-          thirdPartiesArtifactsDep,
+          thirdPartyArtifacts,
           moduleAliasDep,
-          ...firstPartyArtifactDeps
+          ...firstPartyArtifacts
         ];
 
         /** Workaround for BuckleScript bug https://github.com/bloomberg/bucklescript/issues/757
