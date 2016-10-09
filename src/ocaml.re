@@ -112,24 +112,7 @@ let moduleAliasLibScheme
 
   /** TODO: do we even need the cmo file here? */
   let targets = List.map f::moduleAliasPath [cmox, ".cmi", ".cmt"];
-
-  /** The Dep's here trigger the compilation of thirdParty npm packages and it is enough
-      just specify the thirdParty's top level cma artifact. Also since module alias is dep
-      for source file in the libDir so no need to redeclare this dep in the compileSourcesScheme **/
-  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libRoot;
-  let thirdPartiesCmasDep =
-    List.map
-      thirdPartyNpmLibs
-      f::(
-        fun libName => {
-          let buildDir = rel dir::buildDirRoot (tsl libName);
-          Dep.path (moduleAliasFile buildDir::buildDir libName::libName ext::cmax)
-        }
-      );
-  let compileRule =
-    Rule.create
-      targets::targets
-      (Dep.all [Dep.path sourcePath, ...thirdPartiesCmasDep] |> mapD (fun _ => action));
+  let compileRule = Rule.simple targets::targets deps::[Dep.path sourcePath] action::action;
   let contentRule =
     Rule.create targets::[sourcePath] (Dep.return (Action.save fileContent target::sourcePath));
   Scheme.rules [contentRule, compileRule]
@@ -158,42 +141,54 @@ let compileSourcesScheme
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libRoot;
   let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libRoot;
 
-  /** Include all ocamlfind dependencies under -package flag **/
-  let ocamlfindPackagesStr =
-    switch thirdPartyOcamlfindLibNames {
-    | [] => ""
-    | libs => "-package " ^ (libs |> List.map f::tsl |> String.concat sep::",")
-    };
-
-  /** Need to include all the third party build directories for cmo artifacts. We compute these
-      parts from the source paths instead of _build directory paths because on a fresh these directories
-      will not be present in _build. Hence the indirect route. **/
-  let thirdPartyNpmDirPaths =
-    List.map thirdPartyNpmLibs f::(fun libName => rel dir::buildDirRoot (tsl libName));
-
-  /** flag to include all the dependencies build dir's **/
-  let includeDir =
-    List.map thirdPartyNpmDirPaths f::(fun path => "-I " ^ tsp path) |> String.concat sep::" ";
-
-  /** Hard Coded Rules for special packages */
-  let extraFlags =
-    if (List.mem thirdPartyOcamlfindLibNames (Lib "core")) {
-      "-thread -package threads"
-    } else {
-      ""
-    };
-
   /** Compute build graph (targets, dependencies) for the current path */
   let compileEachSourcePath path =>
-    OcamlDep.ocamlDepCurrentSources sourcePath::path paths::sourcePaths |>
+    OcamlDep.ocamlDepSource
+      sourcePath::path
+      paths::sourcePaths
+      npmPkgs::thirdPartyNpmLibs
+      ocamlfindPkgs::thirdPartyOcamlfindLibNames |>
     mapD (
-      fun firstPartyDeps => {
+      fun (firstPartyDeps, npmPkgs, ocamlfindPkgs) => {
         let isInterface' = isInterface path;
         let hasInterface' = hasInterface sourcePaths::sourcePaths path;
 
         /** Helper functions to generate build dir paths **/
         let namespacedPath ext =>
           rel dir::buildDir (namespacedName libName::libName path::path ^ ext);
+
+        /** Need to include all the third party build directories for cmo artifacts. We compute these
+            parts from the source paths instead of _build directory paths because on a fresh these directories
+            will not be present in _build. Hence the indirect route. **/
+        let thirdPartyNpmDirPaths =
+          List.map
+            npmPkgs
+            f::(
+              fun libName => {
+                let packageSrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
+                convertLibDirToBuildDir libDir::packageSrcPath
+              }
+            );
+
+        /** flag to include all the dependencies build dir's **/
+        let includeDir =
+          List.map thirdPartyNpmDirPaths f::(fun path => "-I " ^ tsp path) |>
+          String.concat sep::" ";
+
+        /** Include all ocamlfind dependencies under -package flag **/
+        let ocamlfindPackagesStr =
+          switch ocamlfindPkgs {
+          | [] => ""
+          | libs => "-package " ^ (libs |> List.map f::tsl |> String.concat sep::",")
+          };
+
+        /** Hard Coded Rules for special packages */
+        let extraFlags =
+          if (List.mem ocamlfindPkgs (Lib "core")) {
+            "-thread -package threads"
+          } else {
+            ""
+          };
 
         /** Debug Info */
         /* print_endline ("Path: " ^ tsp path);
@@ -261,9 +256,22 @@ let compileSourcesScheme
             firstPartyArtifactDeps
           };
 
+        /** The Dep's here trigger the compilation of thirdParty npm packages and it is enough
+            just specify the thirdParty's top level cma artifact. Also since module alias is dep
+            for source file in the libDir so no need to redeclare this dep in the compileSourcesScheme **/
+        let thirdPartiesCmasDep =
+          List.map
+            npmPkgs
+            f::(
+              fun libName => {
+                let buildDir = rel dir::buildDirRoot (tsl libName);
+                Dep.path (moduleAliasFile buildDir::buildDir libName::libName ext::cmax)
+              }
+            ) |> Dep.all_unit;
+
         /** The overall dependencies include the js artifacts of the both self and third party
             and interface artifact if an interface exits **/
-        let deps = Dep.all_unit [Dep.path path, moduleAliasDep, ...firstPartyArtifactDeps];
+        let deps = [Dep.path path, moduleAliasDep, thirdPartiesCmasDep, ...firstPartyArtifactDeps];
 
         /** Compute the artifacts extensions generate for each file type and then generate the
             correct build dir path for them **/
@@ -278,7 +286,7 @@ let compileSourcesScheme
             };
           List.map f::namespacedPath extns
         };
-        Rule.create targets::targets (Dep.map deps (fun () => action))
+        Rule.simple targets::targets deps::deps action::action
       }
     );
   Scheme.rules_dep (Dep.all (List.map sourcePaths f::compileEachSourcePath))
@@ -341,103 +349,130 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
 };
 
 let finalOutputsScheme buildDir::buildDir libName::libName sortedSourcePaths::sortedSourcePaths => {
-  let moduleAliasCmoPath = rel dir::buildDir (tsm (libToModule topLibName) ^ cmox);
+  let moduleAliasCmoxPath = rel dir::buildDir (tsm (libToModule topLibName) ^ cmox);
+  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::Path.the_root;
+  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::Path.the_root;
 
-  /** All the cmos artifacts from the files in the toplevel src dir **/
-  let cmos =
+  /** */
+  let selfDependencies =
+    List.map
+      sortedSourcePaths
+      f::(
+        fun source =>
+          OcamlDep.ocamlDepSource
+            sourcePath::source
+            paths::sortedSourcePaths
+            npmPkgs::thirdPartyNpmLibs
+            ocamlfindPkgs::thirdPartyOcamlfindLibNames
+      ) |> Dep.all |>
+    mapD (fun ls => List.fold init::([], []) ls f::(fun (n', o') (s, n, o) => (n' @ n, o' @ o))) |>
+    mapD (fun (npmPkgs, ocamlfindPkgs) => (List.dedup npmPkgs, List.dedup ocamlfindPkgs));
+
+  /** All the cmo/cmss artifacts from the files in the toplevel src dir **/
+  let cmoxArtifacts =
     List.map
       /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
       sortedSourcePaths
       f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ cmox));
-  let cmis =
-    List.map
-      /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
-      sortedSourcePaths
-      f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ ".cmi"));
-  let cmosString = List.map cmos f::tsp |> String.concat sep::" ";
+  let cmoxsString = List.map cmoxArtifacts f::tsp |> String.concat sep::" ";
 
-  /** Gather all the cma artifacts compiled from npm package **/
-  let transitiveCmaPaths =
-    List.map
-      NpmDep.sortedTransitiveThirdPartyNpmLibsIncludingSelf's
-      f::(
-        fun libName =>
-          rel dir::(rel dir::buildDirRoot (tsl libName)) (tsm (libToModule libName) ^ cmax)
-      );
-  let ocamlfindPackagesStr =
-    if (NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
-      ""
-    } else {
-      "-linkpkg -package " ^ (
-        List.map NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's f::tsl |>
-        String.concat sep::","
-      )
-    };
+  selfDependencies |>
+  mapD (
+    fun (npmPkgs, ocamlfindPkgs) => {
 
-  /** Hard Coded Rules for special packages */
-  /* TODO add ocamlcFlags */
-  let extraFlags =
-    if (List.mem NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's (Lib "core")) {
-      "-thread -package threads"
-    } else {
-      ""
-    };
-  let action =
-    bashf
-      /* For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
-         the module invokes some jsoo's Js module-related stuff. */
-      /* Example command: ocamlc -g -I path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma \
-         -open Top -o app.out  ../barDependsOnMe/lib.cma ../bar/lib.cma ../baz/lib.cma \
-         top.cmo aDependsOnMe.cmo a.cmo moreFirstPartyCmo.cmo */
-      /* Flags:
-         -I: search path(s), when ocamlc looks for modules referenced inside the file.
+      /** Gather all the cma artifacts compiled from npm package **/
+      let transitiveCmaxs =
+        List.map
+        (NpmDep.sortedTransitiveThirdPartyNpmLibsIncludingSelf's npmPkgs::npmPkgs)
+          f::(
+            fun libName => {
+              let packageSrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
+              let packageCmax =
+                rel
+                  dir::(convertLibDirToBuildDir libDir::packageSrcPath)
+                  (tsm (libToModule libName) ^ cmax);
+              packageCmax
+            }
+          );
 
-         -open: compile the file as if [file being opened] was opened at the top of the file. In
-         our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
-         function for more comment.
+      let allThirdPartyOcamlFindPkgs = NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's npmPkgs::npmPkgs ocamlfindPkgs::ocamlfindPkgs;
 
-         -o: output file name.
-         */
-      "ocamlfind %s %s %s -g -open %s -o %s %s %s %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
-      compiler
-      extraFlags
-      ocamlfindPackagesStr
-      (tsm (libToModule libName))
-      (tsp binaryOutput)
-      (transitiveCmaPaths |> List.map f::tsp |> String.concat sep::" ")
-      (tsp moduleAliasCmoPath)
-      cmosString;
-  let backend = rebelConfig.backend;
-  let nativeRule =
-    /* We check here for jsoo because jsoo needs binaryOutput */
-    backend == "byte" || backend == "native" || backend == "jsoo" ?
-      [
-        Rule.simple
-          targets::[binaryOutput]
-          deps::(
-            /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-            cmis @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
+      let ocamlfindPackagesStr =
+        if (allThirdPartyOcamlFindPkgs == []) {
+          ""
+        } else {
+          "-linkpkg -package " ^ (
+            List.map allThirdPartyOcamlFindPkgs f::tsl |>
+            String.concat sep::","
           )
-          action::action
-      ] :
-      [];
-  let javascriptRule =
-    backend == "jsoo" ?
-      [
-        Rule.simple
-          targets::[jsOutput]
-          deps::[Dep.path binaryOutput]
-          action::(
-            bashf
-              /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
-                 output is still butt ugly. Just kidding I love you guys. */
-              "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
-              (tsp jsOutput)
-              (tsp binaryOutput)
-          )
-      ] :
-      [];
-  Scheme.rules (List.append nativeRule javascriptRule)
+        };
+
+      /** Hard Coded Rules for special packages */
+      /* TODO add ocamlcFlags */
+      let extraFlags =
+        if (List.mem allThirdPartyOcamlFindPkgs (Lib "core")) {
+          "-thread -package threads"
+        } else {
+          ""
+        };
+      let action =
+        bashf
+          /* For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
+             the module invokes some jsoo's Js module-related stuff. */
+          /* Example command: ocamlc -g -I path/to/js_of_ocaml path/to/js_of_ocaml/js_of_ocaml.cma \
+             -open Top -o app.out  ../barDependsOnMe/lib.cma ../bar/lib.cma ../baz/lib.cma \
+             top.cmo aDependsOnMe.cmo a.cmo moreFirstPartyCmo.cmo */
+          /* Flags:
+             -I: search path(s), when ocamlc looks for modules referenced inside the file.
+
+             -open: compile the file as if [file being opened] was opened at the top of the file. In
+             our case, we open our module alias file generated with `moduleAliasFileScheme`. See that
+             function for more comment.
+
+             -o: output file name.
+             */
+          "ocamlfind %s %s %s -g -open %s -o %s %s %s %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+          compiler
+          extraFlags
+          ocamlfindPackagesStr
+          (tsm (libToModule libName))
+          (tsp binaryOutput)
+          (transitiveCmaxs |> List.map f::tsp |> String.concat sep::" ")
+          (tsp moduleAliasCmoxPath)
+          cmoxsString;
+      let backend = rebelConfig.backend;
+      let nativeRule =
+        /* We check here for jsoo because jsoo needs binaryOutput */
+        backend == "byte" || backend == "native" || backend == "jsoo" ?
+          [
+            Rule.simple
+              targets::[binaryOutput]
+              deps::(
+                /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
+                cmoxArtifacts @ transitiveCmaxs |> List.map f::Dep.path
+              )
+              action::action
+          ] :
+          [];
+      let javascriptRule =
+        backend == "jsoo" ?
+          [
+            Rule.simple
+              targets::[jsOutput]
+              deps::[Dep.path binaryOutput]
+              action::(
+                bashf
+                  /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
+                     output is still butt ugly. Just kidding I love you guys. */
+                  "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
+                  (tsp jsOutput)
+                  (tsp binaryOutput)
+              )
+          ] :
+          [];
+      Scheme.rules (List.append nativeRule javascriptRule)
+    }
+  ) |> Scheme.dep
 };
 
 let compileLibScheme

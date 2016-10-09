@@ -54,11 +54,10 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
 
 /* Figure out the order in which third-party libs should be compiled, based on their dependencies (the
    depended is compiled before the dependent). */
-let sortedTransitiveThirdPartyNpmLibsIncludingSelf's = {
-  let thirdPartyLibs = getThirdPartyNpmLibs libDir::Path.the_root;
+let sortedTransitiveThirdPartyNpmLibsIncludingSelf's npmPkgs::npmPkgs => {
   let thirdPartyDeps =
     List.map
-      thirdPartyLibs
+      npmPkgs
       f::(
         fun name => {
           /* third party's own third party libs */
@@ -70,13 +69,11 @@ let sortedTransitiveThirdPartyNpmLibsIncludingSelf's = {
   topologicalSort thirdPartyDeps
 };
 
-let transitiveThirdPartyOcamlfindLibsIncludingSelf's = {
-  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::Path.the_root;
-  let thirdPartyOcamlfindLibs = getThirdPartyOcamlfindLibs libDir::Path.the_root;
+let transitiveThirdPartyOcamlfindLibsIncludingSelf's ocamlfindPkgs::ocamlfindPkgs npmPkgs::npmPkgs => {
   let thirdPartyLibDirs =
-    List.map thirdPartyNpmLibs f::(fun name => Path.relative dir::nodeModulesRoot (tsl name));
+    List.map npmPkgs f::(fun name => Path.relative dir::nodeModulesRoot (tsl name));
   /* each third party's own third party libs */
   let thirdPartiesThirdPartyOcamlfindLibNamesD =
     List.map thirdPartyLibDirs f::(fun libDir => getThirdPartyOcamlfindLibs libDir::libDir);
-  thirdPartyOcamlfindLibs @ List.concat thirdPartiesThirdPartyOcamlfindLibNamesD |> List.dedup
+  ocamlfindPkgs @ List.concat thirdPartiesThirdPartyOcamlfindLibNamesD |> List.dedup
 };
