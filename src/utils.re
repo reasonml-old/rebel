@@ -66,7 +66,7 @@ let hasInterface sourcePaths::sourcePaths path =>
 
 let nodeModulesRoot = rel dir::Path.the_root "node_modules";
 
-let buildDirRoot = rel dir::Path.the_root "_build";
+let buildDirRoot = rel dir::(rel dir::Path.the_root "_build") "default";
 
 let topSrcDir = rel dir::Path.the_root "src";
 
@@ -111,11 +111,11 @@ let getSourceFiles dir::dir => {
 /** Build Path Helpers **/
 let extractPackageName dir::dir => {
   let pathComponents = String.split on::'/' (tsp dir);
-  List.nth_exn pathComponents 1
+  List.nth_exn pathComponents 2
 };
 
 let convertBuildDirToLibDir buildDir::buildDir => {
-  let path = String.chop_prefix_exn (tsp buildDir) "_build/";
+  let path = String.chop_prefix_exn (tsp buildDir) ((tsp buildDirRoot) ^ "/");
   let pathComponents = String.split path on::'/';
 
   /** prepare base src path */
@@ -132,24 +132,6 @@ let convertBuildDirToLibDir buildDir::buildDir => {
     rel dir::basePath
   }
 };
-
-let convertLibDirToBuildDir libDir::libDir => {
-  let path = tsp libDir;
-  let pathComponents = String.split path on::'/';
-  if (List.nth_exn pathComponents 0 == "src") {
-    rel dir::buildDirRoot path
-  } else {
-    let packageName = extractPackageName dir::libDir;
-    let basePath = rel dir::buildDirRoot packageName;
-    if (List.length pathComponents == 3) {
-      basePath
-    } else {
-      List.slice pathComponents 3 (List.length pathComponents) |> String.concat sep::"/" |>
-      rel dir::basePath
-    }
-  }
-};
-
 
 /** Rebel-specific helpers **/
 type moduleName =

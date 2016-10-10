@@ -55,7 +55,11 @@ let dotMerlinScheme
   let thirdPartyNpmMerlinDeps =
     thirdPartyNpmLibs |>
     List.map f::(fun libName => relD dir::(rel dir::nodeModulesRoot (tsl libName)) ".merlin");
-  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::dir;
+  let ocamlfindPkgs =
+    switch (NpmDep.getThirdPartyOcamlfindLibs libDir::dir) {
+    | [] => ""
+    | _ as ls => "PKG " ^ (ls |> List.map f::tsl |> String.concat sep::" ")
+    };
 
   /** Overwrites existing conf   **/
   let saveMerlinAction previousContents::previousContents => {
@@ -99,7 +103,7 @@ B %s
 # the location of third-party dependencies. For us, most of our third-party deps
 # reside in `node_modules/` (made visible to Merlin through the S command
 # above); this PKG command is for discovering the opam/ocamlfind packages.
-PKG %s
+%s
 
 # FLG is the set of flags to pass to Merlin, as if it used ocamlc to compile and
 # understand our sources. You don't have to understand what these flags are for
@@ -117,7 +121,7 @@ FLG -w -30 -w -40 %s
         thirdPartyNpmMerlinSources
         (Path.reach_from dir::dir (rel dir::buildDirRoot "*"))
         bucklescriptBuildArtifacts
-        (thirdPartyOcamlfindLibNames |> List.map f::tsl |> String.concat sep::" ")
+        ocamlfindPkgs
         (isTopLevelLib && bscBackend ? "" : "-open " ^ tsm (libToModule libName))
         (bscBackend ? merlinWorkAroundComment : "")
         (bscBackend ? "FLG -ppx " ^ bsppxAbsolutePath : "")

@@ -18,7 +18,7 @@ S ./node_modules/Rexpress/src
 S ./node_modules/remath/src
 
 # B stands for build (artifacts). We generate ours into _build
-B ./_build/*
+B ./_build/default/*
 
 # Bucklescript build artifacts
 B ./node_modules/bs-platform/lib/ocaml
@@ -27,7 +27,7 @@ B ./node_modules/bs-platform/lib/ocaml
 # the location of third-party dependencies. For us, most of our third-party deps
 # reside in `node_modules/` (made visible to Merlin through the S command
 # above); this PKG command is for discovering the opam/ocamlfind packages.
-PKG 
+
 
 # FLG is the set of flags to pass to Merlin, as if it used ocamlc to compile and
 # understand our sources. You don't have to understand what these flags are for
