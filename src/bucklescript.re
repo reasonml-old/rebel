@@ -88,7 +88,7 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
       (Path.to_string sourcePath)
       (Path.to_string (name ".cmj"));
   /* TODO: do we even need the cmj file here? */
-  let compileRule = Rule.create targets::targets (Dep.path sourcePath |> mapD (fun () => action));
+  let compileRule = Rule.simple targets::targets deps::[Dep.path sourcePath] action::action;
   let contentRule =
     Rule.create targets::[sourcePath] (Dep.return (Action.save fileContent target::sourcePath));
   Scheme.rules [contentRule, compileRule]
@@ -247,7 +247,7 @@ let compileSourcesScheme
 
         /** The overall dependecies include the cmj artifacts of the both self and third party
             and interface artifact if an interface exits **/
-        let deps = Dep.all_unit [
+        let deps = [
           Dep.path path,
           thirdPartyArtifacts,
           moduleAliasDep,
@@ -264,7 +264,7 @@ let compileSourcesScheme
 
         /** Compile JS from BuckleScript and copy the file to match require call */
         Scheme.rules [
-          Rule.create targets::targets (Dep.map deps (fun () => action)),
+          Rule.simple targets::targets deps::deps action::action,
           ...isTopLevelLib ? [] : [copyRule]
         ]
       }

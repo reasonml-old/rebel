@@ -86,19 +86,65 @@ let ocamlDepSource
             } else if (
               List.exists npmPkgsModules f::(fun m' => m == m')
             ) {
-              let pos = List.foldi init::0 f::(fun i acc m' => m' == m ? acc + i : acc) npmPkgsModules;
-              (firstParty, npmPkgs' @ [ List.nth_exn npmPkgs pos ], ocamlfindPkgs')
+              let pos =
+                List.foldi init::0 f::(fun i acc m' => m' == m ? acc + i : acc) npmPkgsModules;
+              (firstParty, npmPkgs' @ [List.nth_exn npmPkgs pos], ocamlfindPkgs')
             } else if (
               List.exists ocamlfindPkgsModules f::(fun m' => m == m')
             ) {
-              let pos = List.foldi init::0 f::(fun i acc m' => m' == m ? acc + i : acc) ocamlfindPkgsModules;
-              (firstParty, npmPkgs', ocamlfindPkgs' @ [ List.nth_exn ocamlfindPkgs pos ])
+              let pos =
+                List.foldi
+                  init::0 f::(fun i acc m' => m' == m ? acc + i : acc) ocamlfindPkgsModules;
+              (firstParty, npmPkgs', ocamlfindPkgs' @ [List.nth_exn ocamlfindPkgs pos])
             } else {
               (firstParty, npmPkgs', ocamlfindPkgs')
             }
         )
     }
   );
+
+let ocamlDepThirdPartyLib paths::paths libDir::libDir => {
+  let npmPkgs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
+  let ocamlfindPkgs = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
+  List.map
+    paths
+    f::(
+      fun source =>
+        ocamlDepSource
+          sourcePath::source paths::paths npmPkgs::npmPkgs ocamlfindPkgs::ocamlfindPkgs
+    ) |> Dep.all |>
+  mapD (fun ls => List.fold init::([], []) ls f::(fun (n', o') (s, n, o) => (n' @ n, o' @ o))) |>
+  mapD (fun (npmPkgs, ocamlfindPkgs) => (List.dedup npmPkgs, List.dedup ocamlfindPkgs))
+};
+
+let sortedTransitiveThirdPartyLibs paths::paths => {
+  let rec computeAllDeps acc::acc npmPkgs::npmPkgs =>
+    switch npmPkgs {
+    | [] => acc
+    | [pkg, ...rest] =>
+      let libDir = rel dir::nodeModulesRoot (tsl pkg);
+      let paths = getSourceFiles dir::(rel dir::libDir "src");
+      acc |>
+      bindD (
+        fun (npmAcc, ocamlAcc) =>
+          List.exists npmAcc f::(fun (p, _) => p == pkg) ?
+            computeAllDeps acc::acc npmPkgs::rest :
+            ocamlDepThirdPartyLib libDir::libDir paths::paths |>
+            bindD (
+              fun (npmPkgs', ocamlfindPkgs') => {
+                let acc' = Dep.return ([(pkg, npmPkgs'), ...npmAcc], ocamlAcc @ ocamlfindPkgs');
+                computeAllDeps acc::acc' npmPkgs::(rest @ npmPkgs')
+              }
+            )
+      )
+    };
+  ocamlDepThirdPartyLib libDir::Path.the_root paths::paths |>
+  bindD (
+    fun (npmPkgs, ocamlfindPkgs) =>
+      computeAllDeps acc::(Dep.return ([], ocamlfindPkgs)) npmPkgs::npmPkgs
+  ) |>
+  mapD (fun (npmPkgs, ocamlfindPkgs) => (topologicalSort npmPkgs, List.dedup ocamlfindPkgs))
+};
 
 /* Used to compile a library file. The compile command requires files to be passed in order. If A requires B
    but B is passed after A in the command, the compilation will fail with e.g. "module B not found" when

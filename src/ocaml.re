@@ -161,14 +161,7 @@ let compileSourcesScheme
             parts from the source paths instead of _build directory paths because on a fresh these directories
             will not be present in _build. Hence the indirect route. **/
         let thirdPartyNpmDirPaths =
-          List.map
-            npmPkgs
-            f::(
-              fun libName => {
-                let packageSrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
-                convertLibDirToBuildDir libDir::packageSrcPath
-              }
-            );
+          List.map npmPkgs f::(fun libName => rel dir::buildDirRoot (tsl libName));
 
         /** flag to include all the dependencies build dir's **/
         let includeDir =
@@ -350,23 +343,6 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
 
 let finalOutputsScheme buildDir::buildDir libName::libName sortedSourcePaths::sortedSourcePaths => {
   let moduleAliasCmoxPath = rel dir::buildDir (tsm (libToModule topLibName) ^ cmox);
-  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::Path.the_root;
-  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::Path.the_root;
-
-  /** */
-  let selfDependencies =
-    List.map
-      sortedSourcePaths
-      f::(
-        fun source =>
-          OcamlDep.ocamlDepSource
-            sourcePath::source
-            paths::sortedSourcePaths
-            npmPkgs::thirdPartyNpmLibs
-            ocamlfindPkgs::thirdPartyOcamlfindLibNames
-      ) |> Dep.all |>
-    mapD (fun ls => List.fold init::([], []) ls f::(fun (n', o') (s, n, o) => (n' @ n, o' @ o))) |>
-    mapD (fun (npmPkgs, ocamlfindPkgs) => (List.dedup npmPkgs, List.dedup ocamlfindPkgs));
 
   /** All the cmo/cmss artifacts from the files in the toplevel src dir **/
   let cmoxArtifacts =
@@ -376,41 +352,29 @@ let finalOutputsScheme buildDir::buildDir libName::libName sortedSourcePaths::so
       f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ cmox));
   let cmoxsString = List.map cmoxArtifacts f::tsp |> String.concat sep::" ";
 
-  selfDependencies |>
+  OcamlDep.sortedTransitiveThirdPartyLibs paths::sortedSourcePaths |>
   mapD (
     fun (npmPkgs, ocamlfindPkgs) => {
 
       /** Gather all the cma artifacts compiled from npm package **/
       let transitiveCmaxs =
         List.map
-        (NpmDep.sortedTransitiveThirdPartyNpmLibsIncludingSelf's npmPkgs::npmPkgs)
+          npmPkgs
           f::(
-            fun libName => {
-              let packageSrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
-              let packageCmax =
-                rel
-                  dir::(convertLibDirToBuildDir libDir::packageSrcPath)
-                  (tsm (libToModule libName) ^ cmax);
-              packageCmax
-            }
+            fun libName =>
+              rel dir::(rel dir::buildDirRoot (tsl libName)) (tsm (libToModule libName) ^ cmax)
           );
-
-      let allThirdPartyOcamlFindPkgs = NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's npmPkgs::npmPkgs ocamlfindPkgs::ocamlfindPkgs;
-
       let ocamlfindPackagesStr =
-        if (allThirdPartyOcamlFindPkgs == []) {
+        if (ocamlfindPkgs == []) {
           ""
         } else {
-          "-linkpkg -package " ^ (
-            List.map allThirdPartyOcamlFindPkgs f::tsl |>
-            String.concat sep::","
-          )
+          "-linkpkg -package " ^ (List.map ocamlfindPkgs f::tsl |> String.concat sep::",")
         };
 
       /** Hard Coded Rules for special packages */
       /* TODO add ocamlcFlags */
       let extraFlags =
-        if (List.mem allThirdPartyOcamlFindPkgs (Lib "core")) {
+        if (List.mem ocamlfindPkgs (Lib "core")) {
           "-thread -package threads"
         } else {
           ""
