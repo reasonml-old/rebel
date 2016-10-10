@@ -176,7 +176,7 @@ let compileSourcesScheme
 
         /** flag to include all the dependencies build dir's **/
         let includeDir =
-          thirdPartyNpmLibs |> List.map f::(fun libName => "-I _build/" ^ tsl libName) |>
+          thirdPartyNpmLibs |> List.map f::(fun libName => "-I " ^ tsp (rel dir::buildDirRoot (tsl libName))) |>
           String.concat sep::" ";
 
         /** Debug Info */

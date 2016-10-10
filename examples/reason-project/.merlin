@@ -17,7 +17,7 @@ S src
 S ./node_modules/remath/src
 
 # B stands for build (artifacts). We generate ours into _build
-B ./_build/*
+B ./_build/default/*
 
 
 

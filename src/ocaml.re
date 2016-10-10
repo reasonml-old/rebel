@@ -31,6 +31,7 @@ let cmox = rebelConfig.backend == "native" ? ".cmx" : ".cmo";
 /* library artifact extension  */
 let cmax = rebelConfig.backend == "native" ? ".cmxa" : ".cma";
 
+
 /**
   When we build src folder of any package, we convert the package name in camelCase and
   use it for modules alias. For the top level src, we simply module alias it with `Src`.
@@ -127,7 +128,8 @@ let moduleAliasLibScheme
       );
   let compileRule =
     Rule.create
-      targets::targets (Dep.all [Dep.path sourcePath, ...thirdPartiesCmasDep] |> mapD (fun _ => action));
+      targets::targets
+      (Dep.all [Dep.path sourcePath, ...thirdPartiesCmasDep] |> mapD (fun _ => action));
   let contentRule =
     Rule.create targets::[sourcePath] (Dep.return (Action.save fileContent target::sourcePath));
   Scheme.rules [contentRule, compileRule]
@@ -167,14 +169,7 @@ let compileSourcesScheme
       parts from the source paths instead of _build directory paths because on a fresh these directories
       will not be present in _build. Hence the indirect route. **/
   let thirdPartyNpmDirPaths =
-    List.map
-      thirdPartyNpmLibs
-      f::(
-        fun libName => {
-          let packageSrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
-          convertLibDirToBuildDir libDir::packageSrcPath
-        }
-      );
+    List.map thirdPartyNpmLibs f::(fun libName => rel dir::buildDirRoot (tsl libName));
 
   /** flag to include all the dependencies build dir's **/
   let includeDir =
@@ -351,16 +346,9 @@ let finalOutputsScheme buildDir::buildDir libName::libName sortedSourcePaths::so
     List.map
       NpmDep.sortedTransitiveThirdPartyNpmLibsIncludingSelf's
       f::(
-        fun libName => {
-          let packageSrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
-          let packageCma =
-            rel
-              dir::(convertLibDirToBuildDir libDir::packageSrcPath)
-              (tsm (libToModule libName) ^ cmax);
-          packageCma
-        }
+        fun libName =>
+          rel dir::(rel dir::buildDirRoot (tsl libName)) (tsm (libToModule libName) ^ cmax)
       );
-
   let ocamlfindPackagesStr =
     if (NpmDep.transitiveThirdPartyOcamlfindLibsIncludingSelf's == []) {
       ""
