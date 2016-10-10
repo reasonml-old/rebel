@@ -7,7 +7,7 @@ Build system that conforms to the ideal [Reason](https://github.com/facebook/rea
 - Lightning build speed: fast startup, incremental, parallel, etc.
 - `rebel` to build everything. No need for sub-build commands since only changed things are rebuilt.
 - Works with npm-style `node_modules` third-party dependencies that follows the spec (see next section).
-- Works with OPAM/ocamlfind dependencies: put them in the `rebel.ocamlfindDependencies` field, [like so](https://github.com/chenglou/jengaboot/blob/e4a8860617b1c27f0faeeb40082476a22c5e07df/package.json#L28).
+- Works with OPAM/ocamlfind dependencies: put them in the `rebel.ocamlfindDependencies` field, [like so](https://github.com/reasonml/rebel/blob/cf3eb23a5526dc007469384d274c2cbdc40fae83/examples/reason-project/package.json#L17).
 - Works with Reason and vanilla OCaml syntax, out of the box.
 - Generates JavaScript output through [js_of_ocaml](http://ocsigen.org/js_of_ocaml/) or [bucklescript](https://github.com/bloomberg/bucklescript).
 - Peace-of-mind "wipe the whole world" : just remove `_build/`.
