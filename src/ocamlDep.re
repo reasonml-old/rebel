@@ -18,7 +18,7 @@ open Utils;
 let ocamlDep source::source => {
   let flag = isInterface source ? "-intf" : "-impl";
   /* let ppx = rebelConfig.backend == "bucklescript" ? "-ppx bsppx.exe" : "";
-  let berror = rebelConfig.backend == "bucklescript" ? "" : "| berror"; */
+     let berror = rebelConfig.backend == "bucklescript" ? "" : "| berror"; */
   let ppx = "";
   let berror = "| berror";
   /* seems like refmt intelligently detects source code type (re/ml) */
@@ -57,6 +57,43 @@ let ocamlDepCurrentSources sourcePath::sourcePath paths::paths =>
       List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
     }
   );
+
+let sourceFirstPartyDepdendencies source::source paths::paths =>
+  ocamlDep source::source |>
+  mapD (
+    fun (source, deps) => {
+      let originalModule = pathToModule source;
+      /* Dedupe, because we might have foo.re and foo.rei */
+      let paths = List.filter paths f::(fun p => not @@ isInterface p);
+      /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
+         itself, which means that Foo either comes from a third-party module (which we can ignore
+         here), or is a nested module from an `open`ed module, which ocamldep would have detected and
+         returned in this list. */
+      let deps = List.filter deps f::(fun m => m != originalModule);
+      List.filter paths (fun p => List.exists deps f::(fun m => m == pathToModule p))
+    }
+  );
+
+let entryPointDependencies entry::entry paths::paths => {
+  let rec recComputeDeps acc::acc sourcePaths::sourcePaths =>
+    switch sourcePaths {
+    | [] => acc
+    | [source, ...rest] =>
+      acc |>
+      bindD (
+        fun entryDeps =>
+          List.exists entryDeps f::(fun p => p == source) ?
+            recComputeDeps acc::acc sourcePaths::rest :
+            sourceFirstPartyDepdendencies source::source paths::paths |>
+            bindD (
+              fun deps =>
+                recComputeDeps acc::(Dep.return (entryDeps @ [source])) sourcePaths::(rest @ deps)
+            )
+      )
+    };
+  sourceFirstPartyDepdendencies source::entry paths::paths |>
+  bindD (fun deps => recComputeDeps acc::(Dep.return [entry]) sourcePaths::deps)
+};
 
 /* Get only the dependencies on sources in the current library. */
 let ocamlDepSource

@@ -450,7 +450,8 @@ let compileLibScheme
     buildDir::buildDir
     target::target => {
   let targetConfig = List.Assoc.find_exn rebelConfig.targets target;
-  Dep.all ([rel dir::Path.the_root targetConfig.entry] |> List.map f::Dep.return) |>
+  let entry = rel dir::Path.the_root targetConfig.entry;
+  OcamlDep.entryPointDependencies entry::entry paths::(getSourceFiles dir::libDir) |>
   bindD (
     fun unsortedPaths =>
       /* compute all the subdirectories */
