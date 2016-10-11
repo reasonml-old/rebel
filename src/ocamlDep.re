@@ -17,8 +17,10 @@ open Utils;
    tracking in the presence of `open` */
 let ocamlDep source::source => {
   let flag = isInterface source ? "-intf" : "-impl";
-  let ppx = rebelConfig.backend == "bucklescript" ? "-ppx bsppx.exe" : "";
-  let berror = rebelConfig.backend == "bucklescript" ? "" : "| berror";
+  /* let ppx = rebelConfig.backend == "bucklescript" ? "-ppx bsppx.exe" : "";
+  let berror = rebelConfig.backend == "bucklescript" ? "" : "| berror"; */
+  let ppx = "";
+  let berror = "| berror";
   /* seems like refmt intelligently detects source code type (re/ml) */
   let getDepAction () =>
     bashf
@@ -69,6 +71,7 @@ let ocamlDepSource
 
       /** Dedupe, because we might have foo.re and foo.rei */
       let sourceModules = List.map paths f::pathToModule |> List.dedup;
+      /*TODO convert to List.Assoc.t  */
       let npmPkgsModules = List.map npmPkgs f::libToModule;
       let ocamlfindPkgsModules = List.map ocamlfindPkgs f::libToModule;
 

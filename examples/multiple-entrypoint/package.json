@@ -1,0 +1,28 @@
+{
+  "name": "recursive-src",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "rebel -show-actions-run-verbose -verbose -show-error-dependency-paths -brief-error-summary -show-buildable-discovery"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+  },
+  "rebel": {
+    "targets": [
+      {
+        "target": "a",
+        "engine": "native",
+        "entry": "src/a.re"
+      },
+      {
+        "target": "b",
+        "engine": "native",
+        "entry": "src/b.re"
+      }
+    ]
+  }
+}

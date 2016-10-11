@@ -27,7 +27,7 @@ let dotMerlinScheme
     isTopLevelLib::isTopLevelLib
     libName::libName
     dir::dir
-    bscBackend::bscBackend=true => {
+    bscBackend::bscBackend => {
   let dotMerlinPath = rel dir::dir ".merlin";
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::dir;
 
@@ -119,7 +119,7 @@ FLG -w -30 -w -40 %s
 |}
         (isTopLevelLib ? "S src" : "")
         thirdPartyNpmMerlinSources
-        (Path.reach_from dir::dir (rel dir::buildDirRoot "*"))
+        (Path.reach_from dir::dir (rel dir::build "*"))
         bucklescriptBuildArtifacts
         ocamlfindPkgs
         (isTopLevelLib && bscBackend ? "" : "-open " ^ tsm (libToModule libName))
@@ -147,7 +147,7 @@ let scheme dir::dir =>
         isTopLevelLib::true
         dir::dir
         libName::topLibName
-        bscBackend::(rebelConfig.backend == "bucklescript");
+        bscBackend::(false);
     Scheme.all [
       Scheme.rules [Rule.default dir::dir [relD dir::Path.the_root ".merlin"]],
       toplevelScheme
@@ -160,7 +160,7 @@ let scheme dir::dir =>
       isTopLevelLib::false
       dir::dir
       libName::libName
-      bscBackend::(rebelConfig.backend == "bucklescript")
+      bscBackend::(false)
   } else {
     Scheme.no_rules
   };

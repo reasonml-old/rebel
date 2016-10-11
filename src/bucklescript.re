@@ -23,9 +23,9 @@ let jsOutput =
     rebelConfig.targets == [] ?
       ["index"] :
       List.map
-        f::(fun t => t.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir) rebelConfig.targets
+        f::(fun (_, t) => t.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir) rebelConfig.targets
   ) |>
-  List.map f::(fun t => rel dir::(rel dir::buildDirRoot (tsl topLibName)) (t ^ ".js"));
+  List.map f::(fun t => rel dir::(rel dir::build (tsl topLibName)) (t ^ ".js"));
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
    into a foo.ml file whose content is:
@@ -122,13 +122,13 @@ let compileSourcesScheme
     let thirdPartySrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
     let thirdPartyBuildPath path::path ext::ext =>
       relD
-        dir::(rel dir::buildDirRoot (tsl libName))
+        dir::(rel dir::build (tsl libName))
         (namespacedName libName::libName path::path ^ ext);
 
     /** FIXME Temporary workaround for bucklescript bug */
     let bsThirdPartyBuildPath path::path ext::ext =>
       relD
-        dir::(rel dir::buildDirRoot (tsl libName))
+        dir::(rel dir::build (tsl libName))
         (bsNamespacedName libName::libName path::path ^ ext);
 
     /** No need to glob `.rei/.mli`s here. We're only getting the file names to
@@ -163,7 +163,7 @@ let compileSourcesScheme
 
         /** flag to include all the dependencies build dir's **/
         let includeDir =
-          npmPkgs |> List.map f::(fun libName => "-I " ^ tsp (rel dir::buildDirRoot (tsl libName))) |>
+          npmPkgs |> List.map f::(fun libName => "-I " ^ tsp (rel dir::build (tsl libName))) |>
           String.concat sep::" ";
 
         /** Flag for including ocamlfind packages */
@@ -301,7 +301,7 @@ let scheme dir::dir =>
   if (dir == Path.the_root) {
     Scheme.all [Scheme.rules [Rule.default dir::dir (List.map f::Dep.path jsOutput)]]
   } else if (
-    Path.is_descendant dir::buildDirRoot dir
+    Path.is_descendant dir::build dir
   ) {
     let dirName = Path.basename dir;
     let libName = Lib (Path.basename dir);

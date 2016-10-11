@@ -66,7 +66,7 @@ let hasInterface sourcePaths::sourcePaths path =>
 
 let nodeModulesRoot = rel dir::Path.the_root "node_modules";
 
-let buildDirRoot = rel dir::(rel dir::Path.the_root "_build") "default";
+let build = rel dir::Path.the_root "_build";
 
 let topSrcDir = rel dir::Path.the_root "src";
 
@@ -109,13 +109,18 @@ let getSourceFiles dir::dir => {
 
 
 /** Build Path Helpers **/
+let extractTarget dir::dir => {
+  let pathComponents = String.split on::'/' (tsp dir);
+  List.nth_exn pathComponents 1
+};
+
 let extractPackageName dir::dir => {
   let pathComponents = String.split on::'/' (tsp dir);
   List.nth_exn pathComponents 2
 };
 
-let convertBuildDirToLibDir buildDir::buildDir => {
-  let path = String.chop_prefix_exn (tsp buildDir) ((tsp buildDirRoot) ^ "/");
+let convertBuildDirToLibDir buildDir::buildDir target::target => {
+  let path = String.chop_prefix_exn (tsp buildDir) (tsp (rel dir::build target) ^ "/");
   let pathComponents = String.split path on::'/';
 
   /** prepare base src path */
@@ -132,6 +137,7 @@ let convertBuildDirToLibDir buildDir::buildDir => {
     rel dir::basePath
   }
 };
+
 
 /** Rebel-specific helpers **/
 type moduleName =
@@ -210,37 +216,27 @@ let topologicalSort graph => {
 /* package.json helpers */
 type target = {target: string, engine: string, entry: string};
 
-type config = {targets: list target, backend: string};
+type config = {targets: list (string, target)};
 
 let rebelConfig = {
   let packageJsonPath = Path.relative dir::Path.the_root "package.json";
   let configFile = from_file (Path.to_string packageJsonPath);
   let targetsField =
     configFile |> Util.member "rebel" |> Util.to_option (fun a => a |> Util.member "targets");
-  let parseTarget t => {
-    target: Util.member "entry" t |> Util.to_string,
-    engine: Util.member "engine" t |> Util.to_string,
-    entry: Util.member "entry" t |> Util.to_string
-  };
+  let parseTarget t => (
+    Util.member "target" t |> Util.to_string,
+    {
+      target: Util.member "target" t |> Util.to_string,
+      engine: Util.member "engine" t |> Util.to_string,
+      entry: Util.member "entry" t |> Util.to_string
+    }
+  );
   let targets =
     switch targetsField {
     | Some (`List ts) => List.map f::parseTarget ts
-    | _ => [{target: "default", engine: "native", entry: "src/Index.re"}]
+    | _ => [("default", {target: "default", engine: "native", entry: "src/Index.re"})]
     };
-
-  /** We only support one backend at a time and  multiple entry points for bucklescript only. */
-  let backend =
-    if (List.for_all f::(fun t => t.engine == "bucklescript") targets && List.length targets > 0) {
-      "bucklescript"
-    } else if (
-      List.length targets == 1
-    ) {
-      let t = List.nth_exn targets 0;
-      t.engine
-    } else {
-      ""
-    };
-  {targets, backend}
+  {targets: targets}
 };
 
 let readFile path::path =>
