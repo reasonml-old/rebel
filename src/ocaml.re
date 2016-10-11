@@ -269,7 +269,7 @@ let compileSourcesScheme
             } else if hasInterface' {
               [cmox, ".cmt"]
             } else {
-              [".cmi", cmox, ".cmt"]
+              [cmox, ".cmi", ".cmt"]
             };
           List.map f::namespacedPath extns
         };
@@ -301,13 +301,18 @@ let compileCmaScheme sortedSourcePaths::sortedSourcePaths libName::libName build
       /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
       sortedSourcePaths
       f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ cmox));
+  let cmis =
+    List.map
+      /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
+      sortedSourcePaths
+      f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ ".cmi"));
   let cmosString = List.map cmos f::tsp |> String.concat sep::" ";
 
   /** Final bundling. Time to get all the transitive dependencies... */
   Scheme.rules [
     Rule.simple
       targets::[moduleAliasCmaPath]
-      deps::(List.map [moduleAliasCmoPath, ...cmos] f::Dep.path)
+      deps::(List.map ([moduleAliasCmoPath] @ cmis @ cmos) f::Dep.path)
       action::(
         bashf
           /* Flags:
@@ -339,6 +344,12 @@ let finalOutputsScheme buildDir::buildDir libName::libName sortedSourcePaths::so
       /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
       sortedSourcePaths
       f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ cmox));
+  let cmis =
+    List.map
+      /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
+      sortedSourcePaths
+      f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ ".cmi"));
+
   let cmosString = List.map cmos f::tsp |> String.concat sep::" ";
 
   /** Gather all the cma artifacts compiled from npm package **/
@@ -401,7 +412,7 @@ let finalOutputsScheme buildDir::buildDir libName::libName sortedSourcePaths::so
           targets::[binaryOutput]
           deps::(
             /* TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-            cmos @ transitiveCmaPaths |> List.map f::Dep.path
+            cmis @ cmos @ transitiveCmaPaths |> List.map f::Dep.path
           )
           action::action
       ] :
