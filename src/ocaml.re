@@ -242,8 +242,13 @@ let compileSourcesScheme
             f::(fun path => List.exists firstPartyDeps f::(fun m => m == pathToModule path)) |>
           List.map
             f::(
-              fun path => relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi")
-            );
+              fun path =>
+                [relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi")] @ (
+                  rebelConfig.backend == "native" ?
+                    [relD dir::buildDir (namespacedName libName::libName path::path ^ cmox)] : []
+                )
+            ) |>
+          List.fold init::[] f::(@);
         let firstPartyArtifactDeps =
           if (not isInterface' && hasInterface') {
             [
@@ -349,7 +354,6 @@ let finalOutputsScheme buildDir::buildDir libName::libName sortedSourcePaths::so
       /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
       sortedSourcePaths
       f::(fun path => rel dir::buildDir (namespacedName libName::libName path::path ^ ".cmi"));
-
   let cmosString = List.map cmos f::tsp |> String.concat sep::" ";
 
   /** Gather all the cma artifacts compiled from npm package **/
