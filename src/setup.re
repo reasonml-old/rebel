@@ -11,11 +11,12 @@ open Utils;
 let scheme dir::dir => {
   ignore dir;
   let backend = rebelConfig.backend;
+  let merlinScheme = rebelConfig.merlin ? Merlin.scheme dir::dir : Scheme.no_rules;
   switch backend {
-  | "bucklescript" => Scheme.all [Bucklescript.scheme dir::dir, Merlin.scheme dir::dir]
+  | "bucklescript" => Scheme.all [Bucklescript.scheme dir::dir, merlinScheme]
   | "jsoo"
   | "byte"
-  | "native" => Scheme.all [Ocaml.scheme dir::dir, Merlin.scheme dir::dir]
+  | "native" => Scheme.all [Ocaml.scheme dir::dir, merlinScheme]
   | _ =>
     print_endline "Invalid backend it should be one of [ native, jsoo, bucklescript ]";
     Scheme.no_rules

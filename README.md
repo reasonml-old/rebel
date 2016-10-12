@@ -37,6 +37,7 @@ Checkout this [example project](https://github.com/reasonml/RebelExampleProject)
 
 - targets ([ { target: string, engine: string, entry: string } ]): entry points for reason application. Multiple entry points currently only works with bucklescript. If no value is provided, the default value is `[{ target: "default", engine: "native", entry: "src/Index.re" }]`.
 - ocamlfindDependencies (array) : list of ocaml packages that work with ocamlfind
+- merlin (bool): Enable/Disable automatic `.merlin` file generation in your project. Defaults to true.
 
 ### More Info
 **What to put in `gitignore` and `npmignore` when developing a jengaboot compliant project?**

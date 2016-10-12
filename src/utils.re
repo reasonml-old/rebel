@@ -210,13 +210,15 @@ let topologicalSort graph => {
 /* package.json helpers */
 type target = {target: string, engine: string, entry: string};
 
-type config = {targets: list target, backend: string};
+type config = {targets: list target, backend: string, merlin: bool};
 
 let rebelConfig = {
   let packageJsonPath = Path.relative dir::Path.the_root "package.json";
   let configFile = from_file (Path.to_string packageJsonPath);
   let targetsField =
     configFile |> Util.member "rebel" |> Util.to_option (fun a => a |> Util.member "targets");
+  let merlinField =
+    configFile |> Util.member "rebel" |> Util.to_option (fun a => a |> Util.member "merlin");
   let parseTarget t => {
     target: Util.member "entry" t |> Util.to_string,
     engine: Util.member "engine" t |> Util.to_string,
@@ -240,7 +242,12 @@ let rebelConfig = {
     } else {
       ""
     };
-  {targets, backend}
+  let merlin =
+    switch merlinField {
+    | Some (`Bool b) => b
+    | _ => true
+    };
+  {targets, backend, merlin}
 };
 
 let readFile path::path =>
