@@ -19,7 +19,7 @@ let scheme dir::dir => {
     print_endline "Invalid backend it should be one of [ native, jsoo, bucklescript ]";
     Scheme.no_rules
   } */
-  Scheme.all [Ocaml.scheme dir::dir ]
+  Scheme.all [Ocaml.scheme dir::dir, Bucklescript.scheme dir::dir ]
 };
 
 let env () => Env.create

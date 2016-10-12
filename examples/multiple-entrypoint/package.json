@@ -4,24 +4,35 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "rebel -show-actions-run-verbose -verbose -show-error-dependency-paths -brief-error-summary -show-buildable-discovery"
+    "start": "eval $(dependencyEnv) && rebel -show-actions-run-verbose -verbose -show-error-dependency-paths -brief-error-summary -show-buildable-discovery"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "bs-platform": "^1.2.1"
   },
   "rebel": {
     "targets": [
       {
-        "target": "a",
+        "target": "native",
         "engine": "native",
         "entry": "src/a.re"
       },
       {
-        "target": "b",
-        "engine": "native",
-        "entry": "src/b.re"
+        "target": "byte",
+        "engine": "byte",
+        "entry": "src/a.re"
+      },
+      {
+        "target": "js-nice",
+        "engine": "bucklescript",
+        "entry": "src/a.re"
+      },
+      {
+        "target": "js-ugly",
+        "engine": "jsoo",
+        "entry": "src/a.re"
       }
     ]
   }

@@ -15,12 +15,12 @@ open Utils;
 /* Wrapper for the CLI `ocamldep`. Take the output, process it a bit, and pretend we've just called a regular
    ocamldep OCaml function. Note: the `ocamldep` utility doesn't give us enough info for fine, accurate module
    tracking in the presence of `open` */
-let ocamlDep source::source => {
+let ocamlDep source::source target::target => {
   let flag = isInterface source ? "-intf" : "-impl";
-  /* let ppx = rebelConfig.backend == "bucklescript" ? "-ppx bsppx.exe" : "";
-     let berror = rebelConfig.backend == "bucklescript" ? "" : "| berror"; */
-  let ppx = "";
-  let berror = "| berror";
+  let ppx = target.engine == "bucklescript" ? "-ppx bsppx.exe" : "";
+  let berror = target.engine == "bucklescript" ? "" : "| berror";
+  /* let ppx = "";
+  let berror = "| berror"; */
   /* seems like refmt intelligently detects source code type (re/ml) */
   let getDepAction () =>
     bashf
@@ -42,8 +42,8 @@ let ocamlDep source::source => {
 };
 
 /* Get only the dependencies on sources in the current library. */
-let ocamlDepCurrentSources sourcePath::sourcePath paths::paths =>
-  ocamlDep source::sourcePath |>
+let ocamlDepCurrentSources sourcePath::sourcePath paths::paths target::target =>
+  ocamlDep source::sourcePath target::target |>
   mapD (
     fun (source, deps) => {
       let originalModule = pathToModule source;
@@ -58,8 +58,8 @@ let ocamlDepCurrentSources sourcePath::sourcePath paths::paths =>
     }
   );
 
-let sourceFirstPartyDepdendencies source::source paths::paths =>
-  ocamlDep source::source |>
+let sourceFirstPartyDepdendencies source::source paths::paths target::target =>
+  ocamlDep source::source target::target |>
   mapD (
     fun (source, deps) => {
       let originalModule = pathToModule source;
@@ -74,7 +74,7 @@ let sourceFirstPartyDepdendencies source::source paths::paths =>
     }
   );
 
-let entryPointDependencies entry::entry paths::paths => {
+let entryPointDependencies entry::entry paths::paths target::target => {
   let rec recComputeDeps acc::acc sourcePaths::sourcePaths =>
     switch sourcePaths {
     | [] => acc
@@ -84,14 +84,14 @@ let entryPointDependencies entry::entry paths::paths => {
         fun entryDeps =>
           List.exists entryDeps f::(fun p => p == source) ?
             recComputeDeps acc::acc sourcePaths::rest :
-            sourceFirstPartyDepdendencies source::source paths::paths |>
+            sourceFirstPartyDepdendencies source::source paths::paths target::target |>
             bindD (
               fun deps =>
                 recComputeDeps acc::(Dep.return (entryDeps @ [source])) sourcePaths::(rest @ deps)
             )
       )
     };
-  sourceFirstPartyDepdendencies source::entry paths::paths |>
+  sourceFirstPartyDepdendencies source::entry paths::paths target::target |>
   bindD (fun deps => recComputeDeps acc::(Dep.return [entry]) sourcePaths::deps)
 };
 
@@ -100,8 +100,9 @@ let ocamlDepSource
     sourcePath::sourcePath
     paths::paths
     npmPkgs::npmPkgs
+    target::target
     ocamlfindPkgs::ocamlfindPkgs =>
-  ocamlDep source::sourcePath |>
+  ocamlDep source::sourcePath target::target |>
   mapD (
     fun (source, deps) => {
       let originalModule = pathToModule source;
@@ -143,7 +144,7 @@ let ocamlDepSource
     }
   );
 
-let ocamlDepThirdPartyLib paths::paths libDir::libDir => {
+let ocamlDepThirdPartyLib paths::paths libDir::libDir target::target => {
   let npmPkgs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
   let ocamlfindPkgs = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
   List.map
@@ -151,13 +152,13 @@ let ocamlDepThirdPartyLib paths::paths libDir::libDir => {
     f::(
       fun source =>
         ocamlDepSource
-          sourcePath::source paths::paths npmPkgs::npmPkgs ocamlfindPkgs::ocamlfindPkgs
+          sourcePath::source paths::paths npmPkgs::npmPkgs ocamlfindPkgs::ocamlfindPkgs target::target
     ) |> Dep.all |>
   mapD (fun ls => List.fold init::([], []) ls f::(fun (n', o') (s, n, o) => (n' @ n, o' @ o))) |>
   mapD (fun (npmPkgs, ocamlfindPkgs) => (List.dedup npmPkgs, List.dedup ocamlfindPkgs))
 };
 
-let sortedTransitiveThirdPartyLibs paths::paths => {
+let sortedTransitiveThirdPartyLibs paths::paths target::target => {
   let rec computeAllDeps acc::acc npmPkgs::npmPkgs =>
     switch npmPkgs {
     | [] => acc
@@ -169,7 +170,7 @@ let sortedTransitiveThirdPartyLibs paths::paths => {
         fun (npmAcc, ocamlAcc) =>
           List.exists npmAcc f::(fun (p, _) => p == pkg) ?
             computeAllDeps acc::acc npmPkgs::rest :
-            ocamlDepThirdPartyLib libDir::libDir paths::paths |>
+            ocamlDepThirdPartyLib libDir::libDir paths::paths target::target |>
             bindD (
               fun (npmPkgs', ocamlfindPkgs') => {
                 let acc' = Dep.return ([(pkg, npmPkgs'), ...npmAcc], ocamlAcc @ ocamlfindPkgs');
@@ -178,7 +179,7 @@ let sortedTransitiveThirdPartyLibs paths::paths => {
             )
       )
     };
-  ocamlDepThirdPartyLib libDir::Path.the_root paths::paths |>
+  ocamlDepThirdPartyLib libDir::Path.the_root paths::paths target::target |>
   bindD (
     fun (npmPkgs, ocamlfindPkgs) =>
       computeAllDeps acc::(Dep.return ([], ocamlfindPkgs)) npmPkgs::npmPkgs
@@ -189,12 +190,12 @@ let sortedTransitiveThirdPartyLibs paths::paths => {
 /* Used to compile a library file. The compile command requires files to be passed in order. If A requires B
    but B is passed after A in the command, the compilation will fail with e.g. "module B not found" when
    compiling A */
-let sortPathsTopologically paths::paths => {
+let sortPathsTopologically paths::paths target::target => {
   let pathsAsModulesOriginalCapitalization =
     List.map paths f::(fun path => (pathToModule path, path));
   let pathsAsModules = List.map pathsAsModulesOriginalCapitalization f::fst;
   let moduleDepsForPathsD =
-    paths |> List.map f::(fun path => ocamlDepCurrentSources sourcePath::path paths::paths) |> Dep.all;
+    paths |> List.map f::(fun path => ocamlDepCurrentSources sourcePath::path paths::paths target::target) |> Dep.all;
   moduleDepsForPathsD |>
   mapD (
     fun moduleDepsForPaths =>

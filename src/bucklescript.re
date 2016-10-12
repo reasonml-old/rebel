@@ -19,12 +19,8 @@ let module Scheme = Jenga_lib.Api.Scheme;
 open Utils;
 
 let jsOutput =
-  (
-    rebelConfig.targets == [] ?
-      ["index"] :
-      List.map
-        f::(fun (_, t) => t.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir) rebelConfig.targets
-  ) |>
+  rebelConfig.targets |> List.filter f::(fun (_, t) => t.engine == "bucklescript") |>
+  List.map f::(fun (_, t) => t.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir) |>
   List.map f::(fun t => rel dir::(rel dir::build (tsl topLibName)) (t ^ ".js"));
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
@@ -96,15 +92,16 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
 
 /* We perform name spacing magic for only dependencies.*/
 let compileSourcesScheme
-    libDir::libDir
+    libRoot::libRoot
     buildDir::buildDir
     libName::libName
+    target::target
     sourcePaths::sourcePaths
     isTopLevelLib::isTopLevelLib => {
   /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
      to recompile the dependent modules. Win. */
-  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libDir;
-  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libDir;
+  let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libRoot;
+  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libRoot;
 
   /** Compute Module Alias dependencies for dependencies only */
   let moduleAliasDep = Dep.all_unit (
@@ -121,15 +118,12 @@ let compileSourcesScheme
        `node_modules/foo/src/Hi.re`, and its cmj artifacts in `_build/foo/Foo__Hi.cmj` */
     let thirdPartySrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
     let thirdPartyBuildPath path::path ext::ext =>
-      relD
-        dir::(rel dir::build (tsl libName))
-        (namespacedName libName::libName path::path ^ ext);
+      relD dir::(rel dir::build (tsl libName)) (namespacedName libName::libName path::path ^ ext);
 
     /** FIXME Temporary workaround for bucklescript bug */
     let bsThirdPartyBuildPath path::path ext::ext =>
       relD
-        dir::(rel dir::build (tsl libName))
-        (bsNamespacedName libName::libName path::path ^ ext);
+        dir::(rel dir::build (tsl libName)) (bsNamespacedName libName::libName path::path ^ ext);
 
     /** No need to glob `.rei/.mli`s here. We're only getting the file names to
         construct cmj paths. We depend on cmj artifacts rather cmi artifacts because
@@ -150,6 +144,7 @@ let compileSourcesScheme
       sourcePath::path
       paths::sourcePaths
       npmPkgs::thirdPartyNpmLibs
+      target::target
       ocamlfindPkgs::thirdPartyOcamlfindLibNames |>
     mapD (
       fun (firstPartyDeps, npmPkgs, ocamlfindPkgs) => {
@@ -172,7 +167,6 @@ let compileSourcesScheme
           | [] => ""
           | libs => "-bs-package-include " ^ (libs |> List.map f::tsl |> String.concat sep::",")
           };
-
 
         /** Debug Info */
         /* print_endline ("Path: " ^ tsp path);
@@ -247,12 +241,7 @@ let compileSourcesScheme
 
         /** The overall dependecies include the cmj artifacts of the both self and third party
             and interface artifact if an interface exits **/
-        let deps = [
-          Dep.path path,
-          thirdPartyArtifacts,
-          moduleAliasDep,
-          ...firstPartyArtifacts
-        ];
+        let deps = [Dep.path path, thirdPartyArtifacts, moduleAliasDep, ...firstPartyArtifacts];
 
         /** Workaround for BuckleScript bug https://github.com/bloomberg/bucklescript/issues/757
             Action to copy the file to match require call */
@@ -275,9 +264,31 @@ let compileSourcesScheme
 let compileLibScheme
     libName::libName
     isTopLevelLib::isTopLevelLib
-    srcDir::srcDir
-    buildDir::buildDir =>
-  Dep.all (getSourceFiles dir::srcDir |> List.map f::Dep.return) |>
+    libDir::libDir
+    target::target
+    buildDir::buildDir => {
+  let entryPaths =
+    isTopLevelLib ?
+      {
+        let entry = rel dir::Path.the_root target.entry;
+        let sourcePaths = getSourceFiles dir::libDir;
+        OcamlDep.entryPointDependencies entry::entry paths::sourcePaths target::target |>
+        mapD (
+          fun entryImplPaths => {
+            let entryImplPaths = List.map entryImplPaths f::pathToModule;
+            List.filter
+              sourcePaths
+              f::(
+                fun sp => {
+                  let sp = pathToModule sp;
+                  List.exists entryImplPaths f::(fun ep => ep == sp)
+                }
+              )
+          }
+        )
+      } :
+      Dep.all (getSourceFiles dir::libDir |> List.map f::Dep.return);
+  entryPaths |>
   mapD (
     fun unsortedPaths => {
       /* To prevent name collisions between src files and other modules,
@@ -287,27 +298,52 @@ let compileLibScheme
       Scheme.all (
         moduleAliasScheme @ [
           compileSourcesScheme
-            libDir::(Path.dirname srcDir)
+            libRoot::(Path.dirname libDir)
             buildDir::buildDir
             libName::libName
+            target::target
             sourcePaths::unsortedPaths
             isTopLevelLib::isTopLevelLib
         ]
       )
     }
-  ) |> Scheme.dep;
+  ) |> Scheme.dep
+};
 
 let scheme dir::dir =>
   if (dir == Path.the_root) {
-    Scheme.all [Scheme.rules [Rule.default dir::dir (List.map f::Dep.path jsOutput)]]
+    let defaultPaths =
+      rebelConfig.targets |> List.filter f::(fun (_, t) => t.engine == "bucklescript") |>
+      List.map
+        f::(
+          fun (t, target) => {
+            let source = target.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir;
+            relD dir::(rel dir::(rel dir::build t) (tsl topLibName)) (source ^ ".js")
+          }
+        );
+    Scheme.all [Scheme.rules [Rule.default dir::dir defaultPaths]]
   } else if (
     Path.is_descendant dir::build dir
   ) {
     let dirName = Path.basename dir;
     let libName = Lib (Path.basename dir);
+    let targetName = extractTarget dir::dir;
+    let targetConfig = List.Assoc.find_exn rebelConfig.targets targetName;
     let isTopLevelLib = libName == topLibName;
     let srcDir = isTopLevelLib ? topSrcDir : rel dir::(rel dir::nodeModulesRoot dirName) "src";
-    compileLibScheme srcDir::srcDir isTopLevelLib::isTopLevelLib libName::libName buildDir::dir
+
+    let { engine } = targetConfig;
+    if (engine == "bucklescript") {      
+      compileLibScheme
+      libDir::srcDir
+      isTopLevelLib::isTopLevelLib
+      libName::libName
+      buildDir::dir
+      target::targetConfig
+    } else {
+      Scheme.no_rules
+    }
+
   } else {
     Scheme.no_rules
   };
