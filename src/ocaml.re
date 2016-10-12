@@ -32,6 +32,7 @@ let cmox = ".cmx";
 
 let cmax = ".cmxa";
 
+
 /**
   When we build src folder of any package, we convert the package name in camelCase and
   use it for modules alias. For the top level src, we simply module alias it with `Src`.
@@ -151,6 +152,8 @@ let compileSourcesScheme
       ocamlfindPkgs::thirdPartyOcamlfindLibNames |>
     mapD (
       fun (firstPartyDeps, npmPkgs, ocamlfindPkgs) => {
+        print_endline ("ocamlfind dep: " ^ tsp path ^ " " ^ tsl libName);
+        ocamlfindPkgs |> List.map f::tsl |> List.iter f::print_endline;
         let isInterface' = isInterface path;
         let hasInterface' = hasInterface sourcePaths::sourcePaths path;
 
@@ -173,8 +176,9 @@ let compileSourcesScheme
         let ocamlfindPackagesStr =
           switch ocamlfindPkgs {
           | [] => ""
-          | libs => "-package " ^ (libs |> List.map f::tsl |> String.concat sep::",")
+          | _ => "-package " ^ (ocamlfindPkgs |> List.map f::tsl |> String.concat sep::",")
           };
+        print_endline ocamlfindPackagesStr;
 
         /** Hard Coded Rules for special packages */
         let extraFlags =
@@ -183,6 +187,7 @@ let compileSourcesScheme
           } else {
             ""
           };
+        print_endline extraFlags;
 
         /** Debug Info */
         /* print_endline ("Path: " ^ tsp path);
@@ -218,7 +223,10 @@ let compileSourcesScheme
             ("-open " ^ moduleName)
             (tsp buildDir)
             extraFlags
-            ocamlfindPackagesStr
+            ({
+              print_endline ("ocamlfind: " ^ ocamlfindPackagesStr) ;
+              ocamlfindPackagesStr
+            })
             includeDir
             (tsp (namespacedPath ""))
             (tsp path);
@@ -488,7 +496,9 @@ let scheme dir::dir =>
     let defaultRule =
       List.map
         rebelConfig.targets
-        f::(fun (target, _) => Dep.path (rel dir::(rel dir::(rel dir::build target) "src") "app.out"));
+        f::(
+          fun (target, _) => Dep.path (rel dir::(rel dir::(rel dir::build target) "src") "app.out")
+        );
     Scheme.rules [Rule.default dir::dir defaultRule]
   } else if (
     Path.is_descendant dir::build dir
