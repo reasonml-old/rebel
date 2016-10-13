@@ -346,7 +346,7 @@ let finalOutputsScheme
     target::target
     sortedSourcePaths::sortedSourcePaths => {
   let {compiler, cmox, cmax} = target;
-  let binaryOutput = rel dir::buildDir "app.out";
+  let binaryOutput = target.engine == "native" ? rel dir::buildDir "app.native" : rel dir::buildDir "app.byte" ;
   let jsOutput = rel dir::buildDir "app.js";
   let moduleAliasCmoxPath = rel dir::buildDir (tsm (libToModule topLibName) ^ cmox);
 
@@ -519,7 +519,13 @@ let scheme dir::dir =>
         ) |>
       List.map
         f::(
-          fun (target, _) => Dep.path (rel dir::(rel dir::(rel dir::build target) "src") "app.out")
+          fun (_, target) => {
+            switch target.engine {
+              | "native" => Dep.path (rel dir::(rel dir::(rel dir::build target.target) "src") "app.native")
+              | "jsoo" => Dep.path (rel dir::(rel dir::(rel dir::build target.target) "src") "app.js")
+              | _ => Dep.path (rel dir::(rel dir::(rel dir::build target.target) "src") "app.byte")
+            }
+          }
         );
     Scheme.rules [Rule.default dir::dir defaultPaths]
   } else if (
