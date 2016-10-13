@@ -245,8 +245,8 @@ let defaultTarget = {
   engine: "native",
   entry: "src/Index.re",
   compiler: "ocamlopt",
-  cmox: "cmx",
-  cmax: "cmxa"
+  cmox: ".cmx",
+  cmax: ".cmxa"
 };
 
 let rebelConfig = {
