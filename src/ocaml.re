@@ -53,47 +53,45 @@ let moduleAliasLibScheme
     sourcePaths::sourcePaths => {
   let {compiler, cmox} = target;
   let moduleAliasPath ext => moduleAliasFile buildDir::buildDir libName::libName ext::ext;
+  let sourcePath = moduleAliasPath ".ml";
+
+  /** */
+  let moduleAliasCode path => {
+    let moduleName = tsm (pathToModule path);
+    let moduleAliasedName = namespacedName libName::libName path::path;
+    Printf.sprintf "module %s = %s\n" moduleName moduleAliasedName
+  };
 
   /** We omit interface to create the alias file **/
   let sourceNotInterfacePaths = List.filter sourcePaths f::(fun path => not (isInterface path));
-  let fileContent =
-    List.map
-      sourceNotInterfacePaths
-      f::(
-        fun path =>
-          Printf.sprintf
-            "module %s = %s\n"
-            (tsm (pathToModule path))
-            (namespacedName libName::libName path::path)
-      ) |>
-    String.concat sep::"";
-  let sourcePath = moduleAliasPath ".ml";
+  let fileContent = List.map sourceNotInterfacePaths f::moduleAliasCode |> String.concat sep::"";
+
+  /** We suppress a few warnings here through -w.
+      - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
+      can't be found at the moment this module alias file is compiled. This is normal, since the
+      module alias file is the first thing that's compiled (so that we can open it during
+      compilation of A.re and B.re into Foo__A and Foo__B). Think of this as forward declaration.
+
+      - 30: Two labels or constructors of the same name are defined in two mutually recursive
+      types. I forgot...
+
+      - 40: Constructor or label name used out of scope. I forgot too. Great comment huh?
+
+      More flags:
+      -pp refmt option makes ocamlc take our reason syntax source code and pass it through our
+      refmt parser first, before operating on the AST.
+
+      -bin-annot: generates cmt files that contains info such as types and bindings, for use with
+      Merlin.
+
+      -g: add debugging info. You don't really ever compile without this flag.
+
+      -impl: source file. This flag's needed if the source extension isn't ml. I think.
+
+      -o: output name
+      */
   let action =
     bashf
-      /* We suppress a few warnings here through -w.
-         - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
-         can't be found at the moment this module alias file is compiled. This is normal, since the
-         module alias file is the first thing that's compiled (so that we can open it during
-         compilation of A.re and B.re into Foo__A and Foo__B). Think of this as forward declaration.
-
-         - 30: Two labels or constructors of the same name are defined in two mutually recursive
-         types. I forgot...
-
-         - 40: Constructor or label name used out of scope. I forgot too. Great comment huh?
-
-         More flags:
-         -pp refmt option makes ocamlc take our reason syntax source code and pass it through our
-         refmt parser first, before operating on the AST.
-
-         -bin-annot: generates cmt files that contains info such as types and bindings, for use with
-         Merlin.
-
-         -g: add debugging info. You don't really ever compile without this flag.
-
-         -impl: source file. This flag's needed if the source extension isn't ml. I think.
-
-         -o: output name
-         */
       "%s -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
       compiler
       (tsp sourcePath)
@@ -111,13 +109,12 @@ let moduleAliasLibScheme
    foo__Bar.{cmi, cmo, cmt}. As to why we're namespacing compiled outputs like this, see
    `moduleAliasFileScheme`. */
 let compileSourcesScheme
-    libDir::libDir
     libRoot::libRoot
     target::target
     buildDir::buildDir
-    buildDirRoot::buildDirRoot
     libName::libName
     sourcePaths::sourcePaths => {
+  let buildDirRoot = Path.dirname buildDir;
   let {compiler, cmox, cmax} = target;
   /* This is the module alias file generated through `moduleAliasFileScheme`, that we said
      we're gonna `-open` during `ocamlc` */
@@ -341,12 +338,13 @@ let compileCmaScheme
 
 let finalOutputsScheme
     buildDir::buildDir
-    buildDirRoot::buildDirRoot
     libName::libName
     target::target
     sortedSourcePaths::sortedSourcePaths => {
+  let buildDirRoot = Path.dirname buildDir;
   let {compiler, cmox, cmax} = target;
-  let binaryOutput = target.engine == "native" ? rel dir::buildDir "app.native" : rel dir::buildDir "app.byte" ;
+  let binaryOutput =
+    target.engine == "native" ? rel dir::buildDir "app.native" : rel dir::buildDir "app.byte";
   let jsOutput = rel dir::buildDir "app.js";
   let moduleAliasCmoxPath = rel dir::buildDir (tsm (libToModule libName) ^ cmox);
 
@@ -436,18 +434,18 @@ let finalOutputsScheme
               )
           ] :
           [];
-      Scheme.rules (List.append nativeRule javascriptRule)
+      Scheme.rules (nativeRule @ javascriptRule)
     }
   ) |> Scheme.dep
 };
 
 let compileLibScheme
-    libDir::libDir
     libRoot::libRoot
     libName::libName
     isTopLevelLib::isTopLevelLib
     buildDir::buildDir
     target::target => {
+  let libDir = rel dir::libRoot "src";
   let entryPaths =
     isTopLevelLib ?
       {
@@ -484,23 +482,17 @@ let compileLibScheme
             target::target
             sourcePaths::unsortedPaths,
           compileSourcesScheme
-            libDir::libDir
             libRoot::libRoot
             buildDir::buildDir
             target::target
             libName::libName
-            sourcePaths::unsortedPaths
-            buildDirRoot::(rel dir::build target.target),
-          isTopLevelLib && tsp libDir == "src" ?
+            sourcePaths::unsortedPaths,
+          isTopLevelLib ?
             /* if we're at the final, top level compilation, there's no need to build a cma output (and
                then generate an executable from it). We can cut straight to generating the executable. See
                `finalOutputsScheme`. */
             finalOutputsScheme
-              buildDir::buildDir
-              buildDirRoot::(rel dir::build target.target)
-              libName::libName
-              target::target
-              sortedSourcePaths::sortedPaths :
+              buildDir::buildDir libName::libName target::target sortedSourcePaths::sortedPaths :
             compileCmaScheme
               buildDir::buildDir target::target libName::libName sortedSourcePaths::sortedPaths
         ]
@@ -508,49 +500,49 @@ let compileLibScheme
   ) |> Scheme.dep
 };
 
+let defaultPaths =
+  rebelConfig.targets |>
+  List.filter
+    f::(
+      fun target => target.engine == "native" || target.engine == "byte" || target.engine == "jsoo"
+    ) |>
+  List.map
+    f::(
+      fun target =>
+        switch target.engine {
+        | "native" =>
+          Dep.path (rel dir::(rel dir::(rel dir::build target.target) "src") "app.native")
+        | "jsoo" => Dep.path (rel dir::(rel dir::(rel dir::build target.target) "src") "app.js")
+        | _ => Dep.path (rel dir::(rel dir::(rel dir::build target.target) "src") "app.byte")
+        }
+    );
+
 let scheme dir::dir =>
   if (dir == Path.the_root) {
-    let defaultPaths =
-      rebelConfig.targets |>
-      List.filter
-        f::(
-          fun (_, target) =>
-            target.engine == "native" || target.engine == "byte" || target.engine == "jsoo"
-        ) |>
-      List.map
-        f::(
-          fun (_, target) => {
-            switch target.engine {
-              | "native" => Dep.path (rel dir::(rel dir::(rel dir::build target.target) "src") "app.native")
-              | "jsoo" => Dep.path (rel dir::(rel dir::(rel dir::build target.target) "src") "app.js")
-              | _ => Dep.path (rel dir::(rel dir::(rel dir::build target.target) "src") "app.byte")
-            }
-          }
-        );
     Scheme.rules [Rule.default dir::dir defaultPaths]
   } else if (
     Path.is_descendant dir::build dir
   ) {
-    let targetName = extractTarget dir::dir;
-    let targetConfig = List.Assoc.find_exn rebelConfig.targets targetName;
-    let libDir = convertBuildDirToLibDir buildDir::dir target::targetName;
+    let targetName = extractTargetName dir::dir;
+    let targetConfig = findTarget targetName;
     let packageName = extractPackageName dir::dir;
     let isTopLevelLib = packageName == "src";
-    let libName = isTopLevelLib ? Lib (targetName ^ "_Tar"): Lib (Path.basename dir);
+    let libName = isTopLevelLib ? Lib (targetName ^ "_Tar") : Lib (Path.basename dir);
     let libRoot = isTopLevelLib ? Path.dirname topSrcDir : rel dir::nodeModulesRoot packageName;
 
     /** start compile */
     let {engine} = targetConfig;
-    if (engine == "native" || engine == "byte" || engine == "jsoo") {
+    switch engine {
+    | "jsoo"
+    | "byte"
+    | "native" =>
       compileLibScheme
-        libDir::libDir
         libRoot::libRoot
         libName::libName
         isTopLevelLib::isTopLevelLib
         buildDir::dir
         target::targetConfig
-    } else {
-      Scheme.no_rules
+    | _ => Scheme.no_rules
     }
   } else {
     Scheme.no_rules

@@ -62,13 +62,16 @@ let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir bscBa
     rebelConfig.targets |>
     List.map
       f::(
-        fun (target, _) => "B " ^ Path.reach_from dir::dir (rel dir::(rel dir::build target) "*")
+        fun target => "B " ^ Path.reach_from dir::dir (rel dir::(rel dir::build target.target) "*")
       ) |>
     String.concat sep::"\n";
   let openFlag =
     isTopLevelLib ?
       {
-        let openAliases = List.map rebelConfig.targets f::(fun (t, _) => "-open " ^ tsm (libToModule @@ Lib (t ^ "_Tar")));
+        let openAliases =
+          List.map
+            rebelConfig.targets
+            f::(fun target => "-open " ^ tsm (libToModule @@ Lib (target.target ^ "_Tar")));
         String.concat openAliases sep::" "
       } :
       "-open " ^ tsm (libToModule libName);
@@ -152,7 +155,7 @@ FLG -w -30 -w -40 %s
 
 let scheme dir::dir => {
   let bscBackend =
-    List.exists rebelConfig.targets f::(fun (_, target) => target.engine == "bucklescript");
+    List.exists rebelConfig.targets f::(fun (target) => target.engine == "bucklescript");
   /* We generate many .merlin files, one per third-party library (and on at the top). Additionally, this is
      the only case where we generate some artifacts outside of _build/. Most of this is so that Merlin's
      jump-to-location could work correctly when we jump into a third-party source file. As to why exactly we

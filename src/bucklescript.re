@@ -19,8 +19,8 @@ let module Scheme = Jenga_lib.Api.Scheme;
 open Utils;
 
 let jsOutput =
-  rebelConfig.targets |> List.filter f::(fun (_, t) => t.engine == "bucklescript") |>
-  List.map f::(fun (_, t) => t.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir) |>
+  rebelConfig.targets |> List.filter f::(fun t => t.engine == "bucklescript") |>
+  List.map f::(fun t => t.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir) |>
   List.map f::(fun t => rel dir::(rel dir::build (tsp topSrcDir)) (t ^ ".js"));
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
@@ -94,11 +94,11 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
 let compileSourcesScheme
     libRoot::libRoot
     buildDir::buildDir
-    buildDirRoot::buildDirRoot
     libName::libName
     target::target
     sourcePaths::sourcePaths
     isTopLevelLib::isTopLevelLib => {
+  let buildDirRoot = Path.dirname buildDir;
   /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
      to recompile the dependent modules. Win. */
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libRoot;
@@ -261,17 +261,21 @@ let compileSourcesScheme
           Rule.simple
             targets::[copyTarget] deps::[Dep.path (namespacedPath ".js")] action::copyAction;
         let bucklescriptTargets =
-          rebelConfig.targets |> List.filter f::(fun (_, t) => t.engine == "bucklescript");
+          rebelConfig.targets |> List.filter f::(fun t => t.engine == "bucklescript");
         let copyTargetRules =
           isTopLevelLib ?
             List.map
               bucklescriptTargets
               f::(
-                fun (t, target) => {
+                fun target => {
                   let source = target.entry |> rel dir::Path.the_root;
-                  let buildDir = rel dir::(rel dir::build t) (tsp topSrcDir);
+                  let buildDir = rel dir::(rel dir::build target.target) (tsp topSrcDir);
                   let copyDep =
-                    rel dir::buildDir (bsNamespacedName libName::(Lib (t ^ "_Tar")) path::source ^ ".js");
+                    rel
+                      dir::buildDir
+                      (
+                        bsNamespacedName libName::(Lib (target.target ^ "_Tar")) path::source ^ ".js"
+                      );
                   let copyTarget = rel dir::buildDir ((source |> fileNameNoExtNoDir) ^ ".js");
                   let copyAction = bashf "cp %s %s" (tsp copyDep) (tsp copyTarget);
                   Rule.simple targets::[copyTarget] deps::[Dep.path copyDep] action::copyAction
@@ -324,7 +328,6 @@ let compileLibScheme
       compileSourcesScheme
         libRoot::(Path.dirname libDir)
         buildDir::buildDir
-        buildDirRoot::(rel dir::build target.target)
         libName::libName
         target::target
         sourcePaths::unsortedPaths
@@ -333,35 +336,34 @@ let compileLibScheme
   ) |> Scheme.dep
 };
 
+let bucklescriptTargets =
+  rebelConfig.targets |> List.filter f::(fun t => t.engine == "bucklescript");
+
+let targetOutputFile target => {
+  let fileName = target.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir;
+  let buildDir = rel dir::(rel dir::build target.target) (tsp topSrcDir);
+  relD dir::buildDir (fileName ^ ".js")
+  /* relD dir::buildDir (bsNamespacedName libName::topLibName path::source ^ ".js") */
+};
+
+let defaultPaths = List.map bucklescriptTargets f::targetOutputFile;
+
 let scheme dir::dir =>
   if (dir == Path.the_root) {
-    let bucklescriptTargets =
-      rebelConfig.targets |> List.filter f::(fun (_, t) => t.engine == "bucklescript");
-    let defaultPaths =
-      List.map
-        bucklescriptTargets
-        f::(
-          fun (t, target) => {
-            let fileName = target.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir;
-            let buildDir = rel dir::(rel dir::build t) (tsp topSrcDir);
-            relD dir::buildDir (fileName ^ ".js")
-            /* relD dir::buildDir (bsNamespacedName libName::topLibName path::source ^ ".js") */
-          }
-        );
     Scheme.all [Scheme.rules [Rule.default dir::dir defaultPaths]]
   } else if (
     Path.is_descendant dir::build dir
   ) {
     let dirName = Path.basename dir;
-    let targetName = extractTarget dir::dir;
-    let targetConfig = List.Assoc.find_exn rebelConfig.targets targetName;
+    let targetName = extractTargetName dir::dir;
+    let targetConfig = findTarget targetName;
     let isTopLevelLib = Path.basename dir == "src";
-    let libName = isTopLevelLib ? Lib (targetName ^ "_Tar"): Lib (Path.basename dir);
-    let srcDir = isTopLevelLib ? topSrcDir : rel dir::(rel dir::nodeModulesRoot dirName) "src";
+    let libName = isTopLevelLib ? Lib (targetName ^ "_Tar") : Lib (Path.basename dir);
+    let libDir = isTopLevelLib ? topSrcDir : rel dir::(rel dir::nodeModulesRoot dirName) "src";
     let {engine} = targetConfig;
     if (engine == "bucklescript") {
       compileLibScheme
-        libDir::srcDir
+        libDir::libDir
         isTopLevelLib::isTopLevelLib
         libName::libName
         buildDir::dir

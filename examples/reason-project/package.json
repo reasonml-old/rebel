@@ -20,7 +20,7 @@
     "targets": [
       {
         "target": "default",
-        "engine": "native",
+        "engine": "byte",
         "entry": "src/Index.re"
       }
     ]

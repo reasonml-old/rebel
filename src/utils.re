@@ -109,7 +109,7 @@ let getSourceFiles dir::dir => {
 
 
 /** Build Path Helpers **/
-let extractTarget dir::dir => {
+let extractTargetName dir::dir => {
   let pathComponents = String.split on::'/' (tsp dir);
   List.nth_exn pathComponents 1
 };
@@ -214,7 +214,7 @@ type target = {
   cmax: string
 };
 
-type config = {targets: list (string, target)};
+type config = {targets: list target};
 
 let parseTarget t => {
   let target = Util.member "target" t |> Util.to_string;
@@ -228,7 +228,7 @@ let parseTarget t => {
     | "byte" => ("ocamlc", ".cmo", ".cma")
     | _ => ("", "", "")
     };
-  (target, {target, engine, entry, compiler, cmox, cmax})
+  {target, engine, entry, compiler, cmox, cmax}
 };
 
 let defaultTarget = {
@@ -248,9 +248,14 @@ let rebelConfig = {
   let targets =
     switch targetsField {
     | Some (`List ts) => List.map f::parseTarget ts
-    | _ => [("default", defaultTarget)]
+    | _ => [defaultTarget]
     };
   {targets: targets}
+};
+
+let findTarget name => {
+  let pos = List.foldi rebelConfig.targets init::0 f::(fun i acc t => t.target == name ? i : acc);
+  List.nth_exn rebelConfig.targets pos
 };
 
 let readFile path::path =>
