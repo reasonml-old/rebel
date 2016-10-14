@@ -23,11 +23,7 @@ let module Env = Jenga_lib.Api.Env;
 open Utils;
 
 /* See comment in the `sprintf` */
-let dotMerlinScheme
-    isTopLevelLib::isTopLevelLib
-    libName::libName
-    dir::dir
-    bscBackend::bscBackend => {
+let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir bscBackend::bscBackend => {
   let dotMerlinPath = rel dir::dir ".merlin";
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::dir;
 
@@ -61,6 +57,15 @@ let dotMerlinScheme
     | _ as ls => "PKG " ^ (ls |> List.map f::tsl |> String.concat sep::" ")
     };
 
+  /**  Build Artifacts for targets */
+  let buildArtifacts =
+    rebelConfig.targets |>
+    List.map
+      f::(
+        fun (target, _) => "B " ^ Path.reach_from dir::dir (rel dir::(rel dir::build target) "*")
+      ) |>
+    String.concat sep::"\n";
+
   /** Overwrites existing conf   **/
   let saveMerlinAction previousContents::previousContents => {
 
@@ -70,7 +75,9 @@ let dotMerlinScheme
       | "" => ""
       | _ =>
         String.split_lines previousContents |>
+        /* Drop all lines till this particular line */
         List.drop_while f::(fun s => s != "# User Custom config here") |>
+        /* Drop this particular line */
         List.drop_while f::(fun s => s == "# User Custom config here") |>
         String.concat sep::"\n"
       };
@@ -95,7 +102,7 @@ let dotMerlinScheme
 %s
 
 # B stands for build (artifacts). We generate ours into _build
-B %s
+%s
 
 %s
 
@@ -119,10 +126,10 @@ FLG -w -30 -w -40 %s
 |}
         (isTopLevelLib ? "S src" : "")
         thirdPartyNpmMerlinSources
-        (Path.reach_from dir::dir (rel dir::build "*"))
+        buildArtifacts
         bucklescriptBuildArtifacts
         ocamlfindPkgs
-        (isTopLevelLib && bscBackend ? "" : "-open " ^ tsm (libToModule libName))
+        ("-open " ^ tsm (libToModule libName))
         (bscBackend ? merlinWorkAroundComment : "")
         (bscBackend ? "FLG -ppx " ^ bsppxAbsolutePath : "")
         customConfig;
@@ -136,18 +143,16 @@ FLG -w -30 -w -40 %s
   ]
 };
 
-let scheme dir::dir =>
+let scheme dir::dir => {
+  let bscBackend =
+    List.exists rebelConfig.targets f::(fun (_, target) => target.engine == "bucklescript");
   /* We generate many .merlin files, one per third-party library (and on at the top). Additionally, this is
      the only case where we generate some artifacts outside of _build/. Most of this is so that Merlin's
      jump-to-location could work correctly when we jump into a third-party source file. As to why exactly we
      generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
   if (dir == Path.the_root) {
     let toplevelScheme =
-      dotMerlinScheme
-        isTopLevelLib::true
-        dir::dir
-        libName::topLibName
-        bscBackend::(false);
+      dotMerlinScheme isTopLevelLib::true dir::dir libName::topLibName bscBackend::bscBackend;
     Scheme.all [
       Scheme.rules [Rule.default dir::dir [relD dir::Path.the_root ".merlin"]],
       toplevelScheme
@@ -156,11 +161,8 @@ let scheme dir::dir =>
     Path.dirname dir == nodeModulesRoot
   ) {
     let libName = Lib (Path.basename dir);
-    dotMerlinScheme
-      isTopLevelLib::false
-      dir::dir
-      libName::libName
-      bscBackend::(false)
+    dotMerlinScheme isTopLevelLib::false dir::dir libName::libName bscBackend::bscBackend
   } else {
     Scheme.no_rules
-  };
+  }
+};

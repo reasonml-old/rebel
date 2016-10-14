@@ -14,13 +14,16 @@ S src
 # .merlin into each node_modules package. This is subtle; in short, it's to make
 # jump-to-location work correctly in conjunction with our build & namespacing
 # setup, when you jump into a third-party file.
-S ./node_modules/re-kebab/src
-S ./node_modules/remath/src
+
 
 # B stands for build (artifacts). We generate ours into _build
-B ./_build/default/*
+B ./_build/native/*
+B ./_build/byte/*
+B ./_build/js-nice/*
+B ./_build/js-ugly/*
 
-
+# Bucklescript build artifacts
+B ./node_modules/bs-platform/lib/ocaml
 
 # PKG lists packages found through ocamlfind (aka findlib), a tool for finding
 # the location of third-party dependencies. For us, most of our third-party deps
@@ -34,8 +37,9 @@ B ./_build/default/*
 # .merlin at https://github.com/reasonml/rebel
 FLG -w -30 -w -40 -open Src
 
-
-
+# Currently the we use absolute path instead of relative path for bsppx.exe
+# due to bug in merlin but this will be fixed in future.
+FLG -ppx /home/vramana/Documents/reasonml/rebel/examples/multiple-entrypoint/node_modules/bs-platform/bin/bsppx.exe
 
 # User Custom config here
 
