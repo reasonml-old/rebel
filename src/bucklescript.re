@@ -94,6 +94,7 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
 let compileSourcesScheme
     libRoot::libRoot
     buildDir::buildDir
+    buildDirRoot::buildDirRoot
     libName::libName
     target::target
     sourcePaths::sourcePaths
@@ -105,7 +106,7 @@ let compileSourcesScheme
 
   /** Compute Module Alias dependencies for dependencies only */
   let moduleAliasDep = Dep.all_unit (
-    (isTopLevelLib ? [] : ["cmi", "cmj", "cmt"]) |>
+    ["cmi", "cmj", "cmt"] |>
     List.map f::(fun extension => relD dir::buildDir (tsm (libToModule libName) ^ "." ^ extension))
   );
 
@@ -118,12 +119,15 @@ let compileSourcesScheme
        `node_modules/foo/src/Hi.re`, and its cmj artifacts in `_build/foo/Foo__Hi.cmj` */
     let thirdPartySrcPath = rel dir::(rel dir::nodeModulesRoot (tsl libName)) "src";
     let thirdPartyBuildPath path::path ext::ext =>
-      relD dir::(rel dir::build (tsl libName)) (namespacedName libName::libName path::path ^ ext);
+      relD
+        dir::(rel dir::buildDirRoot (tsl libName))
+        (namespacedName libName::libName path::path ^ ext);
 
     /** FIXME Temporary workaround for bucklescript bug */
     let bsThirdPartyBuildPath path::path ext::ext =>
       relD
-        dir::(rel dir::build (tsl libName)) (bsNamespacedName libName::libName path::path ^ ext);
+        dir::(rel dir::buildDirRoot (tsl libName))
+        (bsNamespacedName libName::libName path::path ^ ext);
 
     /** No need to glob `.rei/.mli`s here. We're only getting the file names to
         construct cmj paths. We depend on cmj artifacts rather cmi artifacts because
@@ -154,11 +158,10 @@ let compileSourcesScheme
         /** Helper functions to generate build dir paths **/
         let namespacedPath ext =>
           rel dir::buildDir (namespacedName libName::libName path::path ^ ext);
-        let simplePath ext => rel dir::buildDir (fileNameNoExtNoDir path ^ ext);
 
         /** flag to include all the dependencies build dir's **/
         let includeDir =
-          npmPkgs |> List.map f::(fun libName => "-I " ^ tsp (rel dir::build (tsl libName))) |>
+          npmPkgs |> List.map f::(fun libName => "-I " ^ tsp (rel dir::buildDirRoot (tsl libName))) |>
           String.concat sep::" ";
 
         /** Flag for including ocamlfind packages */
@@ -197,9 +200,9 @@ let compileSourcesScheme
             )
             ocamlfindPackagesStr
             (tsp buildDir)
-            (isTopLevelLib ? "" : "-open " ^ tsm (libToModule libName))
+            ("-open " ^ tsm (libToModule libName))
             (includeDir ^ " -I " ^ tsp buildDir)
-            (isTopLevelLib ? tsp (simplePath "") : tsp (namespacedPath ""))
+            (tsp (namespacedPath ""))
             (tsp path);
 
         /** Compute the artifacts extensions generate for each file type and then generate the
@@ -207,7 +210,7 @@ let compileSourcesScheme
         /* FIXME Due to BuckleScript bug #757, we around it by using simplePath **/
         let targets =
           if isInterface' {
-            [isTopLevelLib ? simplePath ".cmi" : namespacedPath ".cmi"]
+            [namespacedPath ".cmi"]
           } else {
             let extns =
               if hasInterface' {
@@ -215,7 +218,7 @@ let compileSourcesScheme
               } else {
                 [".cmi", ".cmj", ".cmt", ".js"]
               };
-            isTopLevelLib ? List.map f::simplePath extns : List.map f::namespacedPath extns
+            List.map f::namespacedPath extns
           };
 
         /** FIXME is this comment valid?
@@ -225,13 +228,20 @@ let compileSourcesScheme
           sourcePaths |>
           List.filter
             f::(fun path => List.exists firstPartyDeps f::(fun m => m == pathToModule path)) |>
-          List.map f::(fun path => relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmj"));
+          List.map
+            f::(
+              fun path => [
+                relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmj"),
+                relD dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js")
+              ]
+            ) |>
+          List.fold init::[] f::(@);
         let firstPartyArtifacts =
           if hasInterface' {
             [
               /* We're a source file with an interface; include our own cmi as a dependency (our interface
                  file should compile before ourselves). */
-              relD dir::buildDir (fileNameNoExtNoDir path ^ ".cmi"),
+              relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi"),
               ...firstPartyArtifacts
             ]
           } else {
@@ -248,13 +258,32 @@ let compileSourcesScheme
         let copyTarget = rel dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
         let copyAction = bashf "cp %s %s" (tsp (namespacedPath ".js")) (tsp copyTarget);
         let copyRule =
-          Rule.create
-            targets::[copyTarget] (Dep.path (namespacedPath ".js") |> mapD (fun () => copyAction));
+          Rule.simple
+            targets::[copyTarget] deps::[Dep.path (namespacedPath ".js")] action::copyAction;
+        let bucklescriptTargets =
+          rebelConfig.targets |> List.filter f::(fun (_, t) => t.engine == "bucklescript");
+        let copyTargetRules =
+          isTopLevelLib ?
+            List.map
+              bucklescriptTargets
+              f::(
+                fun (t, target) => {
+                  let source = target.entry |> rel dir::Path.the_root;
+                  let buildDir = rel dir::(rel dir::build t) (tsl topLibName);
+                  let copyDep =
+                    rel dir::buildDir (bsNamespacedName libName::topLibName path::source ^ ".js");
+                  let copyTarget = rel dir::buildDir ((source |> fileNameNoExtNoDir) ^ ".js");
+                  let copyAction = bashf "cp %s %s" (tsp copyDep) (tsp copyTarget);
+                  Rule.simple targets::[copyTarget] deps::[Dep.path copyDep] action::copyAction
+                }
+              ) :
+            [];
 
         /** Compile JS from BuckleScript and copy the file to match require call */
         Scheme.rules [
           Rule.simple targets::targets deps::deps action::action,
-          ...isTopLevelLib ? [] : [copyRule]
+          copyRule,
+          ...copyTargetRules
         ]
       }
     );
@@ -290,35 +319,33 @@ let compileLibScheme
       Dep.all (getSourceFiles dir::libDir |> List.map f::Dep.return);
   entryPaths |>
   mapD (
-    fun unsortedPaths => {
-      /* To prevent name collisions between src files and other modules,
-         we namespace all modules except the top level module */
-      let moduleAliasScheme =
-        not isTopLevelLib ? [moduleAliasFileScheme buildDir unsortedPaths libName] : [];
-      Scheme.all (
-        moduleAliasScheme @ [
-          compileSourcesScheme
-            libRoot::(Path.dirname libDir)
-            buildDir::buildDir
-            libName::libName
-            target::target
-            sourcePaths::unsortedPaths
-            isTopLevelLib::isTopLevelLib
-        ]
-      )
-    }
+    fun unsortedPaths => Scheme.all [
+      moduleAliasFileScheme buildDir unsortedPaths libName,
+      compileSourcesScheme
+        libRoot::(Path.dirname libDir)
+        buildDir::buildDir
+        buildDirRoot::(rel dir::build target.target)
+        libName::libName
+        target::target
+        sourcePaths::unsortedPaths
+        isTopLevelLib::isTopLevelLib
+    ]
   ) |> Scheme.dep
 };
 
 let scheme dir::dir =>
   if (dir == Path.the_root) {
+    let bucklescriptTargets =
+      rebelConfig.targets |> List.filter f::(fun (_, t) => t.engine == "bucklescript");
     let defaultPaths =
-      rebelConfig.targets |> List.filter f::(fun (_, t) => t.engine == "bucklescript") |>
       List.map
+        bucklescriptTargets
         f::(
           fun (t, target) => {
-            let source = target.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir;
-            relD dir::(rel dir::(rel dir::build t) (tsl topLibName)) (source ^ ".js")
+            let fileName = target.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir;
+            let buildDir = rel dir::(rel dir::build t) (tsl topLibName);
+            relD dir::buildDir (fileName ^ ".js")
+            /* relD dir::buildDir (bsNamespacedName libName::topLibName path::source ^ ".js") */
           }
         );
     Scheme.all [Scheme.rules [Rule.default dir::dir defaultPaths]]
@@ -331,19 +358,17 @@ let scheme dir::dir =>
     let targetConfig = List.Assoc.find_exn rebelConfig.targets targetName;
     let isTopLevelLib = libName == topLibName;
     let srcDir = isTopLevelLib ? topSrcDir : rel dir::(rel dir::nodeModulesRoot dirName) "src";
-
-    let { engine } = targetConfig;
-    if (engine == "bucklescript") {      
+    let {engine} = targetConfig;
+    if (engine == "bucklescript") {
       compileLibScheme
-      libDir::srcDir
-      isTopLevelLib::isTopLevelLib
-      libName::libName
-      buildDir::dir
-      target::targetConfig
+        libDir::srcDir
+        isTopLevelLib::isTopLevelLib
+        libName::libName
+        buildDir::dir
+        target::targetConfig
     } else {
       Scheme.no_rules
     }
-
   } else {
     Scheme.no_rules
   };

@@ -267,3 +267,9 @@ let readFile path::path =>
   | `Yes => In_channel.read_all (tsp path)
   | _ => ""
   };
+
+
+/** Debugging Utils */
+let print_path path => print_endline @@ tsp path;
+
+let print_paths paths => List.iter paths f::print_path;
