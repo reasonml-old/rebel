@@ -348,7 +348,7 @@ let finalOutputsScheme
   let {compiler, cmox, cmax} = target;
   let binaryOutput = target.engine == "native" ? rel dir::buildDir "app.native" : rel dir::buildDir "app.byte" ;
   let jsOutput = rel dir::buildDir "app.js";
-  let moduleAliasCmoxPath = rel dir::buildDir (tsm (libToModule topLibName) ^ cmox);
+  let moduleAliasCmoxPath = rel dir::buildDir (tsm (libToModule libName) ^ cmox);
 
   /** All the cmo/cmss artifacts from the files in the toplevel src dir **/
   let cmoxArtifacts =
@@ -531,13 +531,12 @@ let scheme dir::dir =>
   } else if (
     Path.is_descendant dir::build dir
   ) {
-    let dirName = Path.basename dir;
-    let libName = Lib dirName;
     let targetName = extractTarget dir::dir;
     let targetConfig = List.Assoc.find_exn rebelConfig.targets targetName;
     let libDir = convertBuildDirToLibDir buildDir::dir target::targetName;
     let packageName = extractPackageName dir::dir;
     let isTopLevelLib = packageName == "src";
+    let libName = isTopLevelLib ? Lib (targetName ^ "_Tar"): Lib (Path.basename dir);
     let libRoot = isTopLevelLib ? Path.dirname topSrcDir : rel dir::nodeModulesRoot packageName;
 
     /** start compile */

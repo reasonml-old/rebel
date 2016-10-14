@@ -65,6 +65,13 @@ let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir bscBa
         fun (target, _) => "B " ^ Path.reach_from dir::dir (rel dir::(rel dir::build target) "*")
       ) |>
     String.concat sep::"\n";
+  let openFlag =
+    isTopLevelLib ?
+      {
+        let openAliases = List.map rebelConfig.targets f::(fun (t, _) => "-open " ^ tsm (libToModule @@ Lib (t ^ "_Tar")));
+        String.concat openAliases sep::" "
+      } :
+      "-open " ^ tsm (libToModule libName);
 
   /** Overwrites existing conf   **/
   let saveMerlinAction previousContents::previousContents => {
@@ -129,7 +136,7 @@ FLG -w -30 -w -40 %s
         buildArtifacts
         bucklescriptBuildArtifacts
         ocamlfindPkgs
-        ("-open " ^ tsm (libToModule libName))
+        openFlag
         (bscBackend ? merlinWorkAroundComment : "")
         (bscBackend ? "FLG -ppx " ^ bsppxAbsolutePath : "")
         customConfig;
@@ -152,7 +159,8 @@ let scheme dir::dir => {
      generate .merlin with the content that it is, call 1-800-chenglou-plz-help. */
   if (dir == Path.the_root) {
     let toplevelScheme =
-      dotMerlinScheme isTopLevelLib::true dir::dir libName::topLibName bscBackend::bscBackend;
+      /* libName here is computer inside the function for various targets */
+      dotMerlinScheme isTopLevelLib::true dir::dir libName::(Lib "") bscBackend::bscBackend;
     Scheme.all [
       Scheme.rules [Rule.default dir::dir [relD dir::Path.the_root ".merlin"]],
       toplevelScheme

@@ -21,7 +21,7 @@ open Utils;
 let jsOutput =
   rebelConfig.targets |> List.filter f::(fun (_, t) => t.engine == "bucklescript") |>
   List.map f::(fun (_, t) => t.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir) |>
-  List.map f::(fun t => rel dir::(rel dir::build (tsl topLibName)) (t ^ ".js"));
+  List.map f::(fun t => rel dir::(rel dir::build (tsp topSrcDir)) (t ^ ".js"));
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
    into a foo.ml file whose content is:
@@ -269,9 +269,9 @@ let compileSourcesScheme
               f::(
                 fun (t, target) => {
                   let source = target.entry |> rel dir::Path.the_root;
-                  let buildDir = rel dir::(rel dir::build t) (tsl topLibName);
+                  let buildDir = rel dir::(rel dir::build t) (tsp topSrcDir);
                   let copyDep =
-                    rel dir::buildDir (bsNamespacedName libName::topLibName path::source ^ ".js");
+                    rel dir::buildDir (bsNamespacedName libName::(Lib (t ^ "_Tar")) path::source ^ ".js");
                   let copyTarget = rel dir::buildDir ((source |> fileNameNoExtNoDir) ^ ".js");
                   let copyAction = bashf "cp %s %s" (tsp copyDep) (tsp copyTarget);
                   Rule.simple targets::[copyTarget] deps::[Dep.path copyDep] action::copyAction
@@ -320,7 +320,7 @@ let compileLibScheme
   entryPaths |>
   mapD (
     fun unsortedPaths => Scheme.all [
-      moduleAliasFileScheme buildDir unsortedPaths libName,
+      moduleAliasFileScheme buildDir::buildDir sourcePaths::unsortedPaths libName::libName,
       compileSourcesScheme
         libRoot::(Path.dirname libDir)
         buildDir::buildDir
@@ -343,7 +343,7 @@ let scheme dir::dir =>
         f::(
           fun (t, target) => {
             let fileName = target.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir;
-            let buildDir = rel dir::(rel dir::build t) (tsl topLibName);
+            let buildDir = rel dir::(rel dir::build t) (tsp topSrcDir);
             relD dir::buildDir (fileName ^ ".js")
             /* relD dir::buildDir (bsNamespacedName libName::topLibName path::source ^ ".js") */
           }
@@ -353,10 +353,10 @@ let scheme dir::dir =>
     Path.is_descendant dir::build dir
   ) {
     let dirName = Path.basename dir;
-    let libName = Lib (Path.basename dir);
     let targetName = extractTarget dir::dir;
     let targetConfig = List.Assoc.find_exn rebelConfig.targets targetName;
-    let isTopLevelLib = libName == topLibName;
+    let isTopLevelLib = Path.basename dir == "src";
+    let libName = isTopLevelLib ? Lib (targetName ^ "_Tar"): Lib (Path.basename dir);
     let srcDir = isTopLevelLib ? topSrcDir : rel dir::(rel dir::nodeModulesRoot dirName) "src";
     let {engine} = targetConfig;
     if (engine == "bucklescript") {

@@ -178,15 +178,6 @@ let bsNamespacedName libName::libName path::path => {
   tsm (bsLibToModule libName) ^ "__" ^ tsm (pathToModule path)
 };
 
-let topPackageName = {
-  let packageJsonPath = Path.relative dir::Path.the_root "package.json";
-  from_file (Path.to_string packageJsonPath) |> Util.member "name" |> Util.to_string |> (
-    fun name => Lib name
-  )
-};
-
-let topLibName = Lib "src";
-
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
    sorted into [c, d, b, a] or [c, b, d, a], aka the ones being depended on will always come before the
    dependent */
