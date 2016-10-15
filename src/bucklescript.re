@@ -206,14 +206,16 @@ let compileSourcesScheme
     /** FIXME is this comment valid?
         compiling here only needs cmjs. If the interface signature doesn't change, ocaml doesn't need
         to recompile the dependent modules. Win. */
-    let firstPartyArtifact path => [
-      relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmj"),
-      relD dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js")
-    ];
     let firstPartyArtifacts =
       sourcePaths |>
       List.filter f::(fun path => List.exists firstPartyDeps f::(fun m => m == pathToModule path)) |>
-      List.map f::firstPartyArtifact |>
+      List.map
+        f::(
+          fun path => [
+            relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmj"),
+            relD dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js")
+          ]
+        ) |>
       List.fold init::[] f::(@);
     let firstPartyArtifacts =
       if hasInterface' {
@@ -275,6 +277,11 @@ let compileSourcesScheme
   Scheme.all (List.map sourcePaths f::(fun path => compilePathScheme' path |> Scheme.dep))
 };
 
+let matchImplIntfFiles path implPaths::implPaths => {
+  let sp = pathToModule path;
+  implPaths |> List.map f::pathToModule |> List.exists f::(fun ep => ep == sp)
+};
+
 let compileLibScheme
     libName::libName
     isTopLevelLib::isTopLevelLib
@@ -288,13 +295,7 @@ let compileLibScheme
         let sourcePaths = getSourceFiles dir::libDir;
         OcamlDep.entryPointDependencies entry::entry paths::sourcePaths target::target |>
         mapD (
-          fun implPaths => {
-            let matchImplIntfFiles path => {
-              let sp = pathToModule path;
-              implPaths |> List.map f::pathToModule |> List.exists f::(fun ep => ep == sp)
-            };
-            List.filter sourcePaths f::matchImplIntfFiles
-          }
+          fun implPaths => List.filter sourcePaths f::(matchImplIntfFiles implPaths::implPaths)
         )
       } :
       Dep.all (getSourceFiles dir::libDir |> List.map f::Dep.return);

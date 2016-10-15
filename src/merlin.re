@@ -28,7 +28,8 @@ let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir bscBa
   let bucklescriptBuildArtifacts =
     bscBackend ? "# Bucklescript build artifacts\nB " ^ bsBuildArtifactsPath : "";
   let merlinWorkAroundComment =
-    "# Currently the we use absolute path instead of relative path for bsppx.exe\n" ^ "# due to bug in merlin but this will be fixed in future.";
+    "# Currently the we use absolute path instead of relative path for bsppx.exe\n" ^
+    "# due to bug in merlin but this will be fixed in future.\n" ^ "More details on this github issue https://github.com/the-lambda-church/merlin/issues/571";
   let bsppxAbsolutePath = Path.to_absolute_string (
     rel dir::Path.the_root "node_modules/bs-platform/bin/bsppx.exe"
   );
@@ -45,6 +46,8 @@ let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir bscBa
   let thirdPartyNpmMerlinDeps =
     thirdPartyNpmLibs |>
     List.map f::(fun libName => relD dir::(rel dir::nodeModulesRoot (tsl libName)) ".merlin");
+
+  /** thirdParty Ocamlfind libs  */
   let ocamlfindPkgs =
     switch (NpmDep.getThirdPartyOcamlfindLibs libDir::dir) {
     | [] => ""
@@ -59,18 +62,20 @@ let dotMerlinScheme isTopLevelLib::isTopLevelLib libName::libName dir::dir bscBa
         fun target => "B " ^ Path.reach_from dir::dir (rel dir::(rel dir::build target.target) "*")
       ) |>
     String.concat sep::"\n";
-  let openFlag =
-    isTopLevelLib ?
-      {
-        let openAliases =
-          List.map
-            rebelConfig.targets
-            f::(fun target => "-open " ^ tsm (libToModule @@ Lib (target.target ^ "_Tar")));
-        String.concat openAliases sep::" "
-      } :
-      "-open " ^ tsm (libToModule libName);
 
-  /** Overwrites existing conf   **/
+  /** If toplevel open all the target's modules alias other open the current library's module alias */
+  let openFlag =
+    (
+      isTopLevelLib ?
+        {
+          let targetModuleAlias target => tsm (libToModule @@ Lib (target.target ^ "_Tar"));
+          List.map rebelConfig.targets f::(fun target => "-open " ^ targetModuleAlias target)
+        } :
+        ["-open " ^ tsm (libToModule libName)]
+    ) |>
+    String.concat sep::" ";
+
+  /** Overwrites existing generated conf User conf is preserved */
   let saveMerlinAction previousContents::previousContents => {
 
     /** Read the existing custom config **/
@@ -149,7 +154,7 @@ FLG -w -30 -w -40 %s
 
 let scheme dir::dir => {
   let bscBackend =
-    List.exists rebelConfig.targets f::(fun (target) => target.engine == "bucklescript");
+    List.exists rebelConfig.targets f::(fun target => target.engine == "bucklescript");
   /* We generate many .merlin files, one per third-party library (and on at the top). Additionally, this is
      the only case where we generate some artifacts outside of _build/. Most of this is so that Merlin's
      jump-to-location could work correctly when we jump into a third-party source file. As to why exactly we
