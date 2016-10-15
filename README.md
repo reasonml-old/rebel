@@ -46,7 +46,7 @@ Jenga generates a `.jenga` directory that caches the build info. `_build/` (wher
 In short, put `.jenga`, `_build` and `.merlin` in your `.gitignore` and `.npmignore`.
 
 ## For Contributors
-Ping me on IRC (chenglou), Twitter (@_chenglou), [Gitter](http://gitter.im/facebook/reason), etc. for specific details.
+Ping me on IRC (chenglou), Twitter (@_chenglou), [Discord](https://discord.gg/reasonml), etc. for specific details.
 
 - `git clone` this repo
 - `npm install`
