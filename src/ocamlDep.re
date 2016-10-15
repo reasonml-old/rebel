@@ -48,7 +48,7 @@ let sourceSelfDependencies source::source paths::paths target::target =>
     fun (source, deps) => {
       let originalModule = pathToModule source;
       /* Filter  foo.rei */
-      let paths = List.filter paths f::(fun p => not (isInterface p));
+      let paths = List.filter paths f::isImplementation;
       /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
          itself, which means that Foo either comes from a third-party module (which we can ignore
          here), or is a nested module from an `open`ed module, which ocamldep would have detected and

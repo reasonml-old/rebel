@@ -42,7 +42,7 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
   };
 
   /** We omit interface to create the alias file **/
-  let sourceNotInterfacePaths = List.filter sourcePaths f::(fun path => not (isInterface path));
+  let sourceNotInterfacePaths = List.filter sourcePaths f::isImplementation;
   let fileContent = List.map sourceNotInterfacePaths f::moduleAliasCode |> String.concat sep::"";
 
   /** We suppress a few warnings here through -w.

@@ -1,6 +1,6 @@
 open Core.Std;
 
-List.iter [1, 2, 3] f::(fun x => print_endline (string_of_int x));
+List.iter f::(fun x => print_endline (string_of_int x)) Test1.numbers;
 
 print_endline Test1.secret;
 
