@@ -34,7 +34,7 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
   let sourcePath = name ".ml";
   let targets = [".cmj", ".cmi", ".cmt"] |> List.map f::name;
 
-  /**  */
+  /** Generates module A = Foo__A for the path src/.../A.re */
   let moduleAliasCode path => {
     let moduleName = tsm (pathToModule path);
     let moduleAliasedName = namespacedName libName::libName path::path;
@@ -74,24 +74,26 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
       "bsc.exe -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
       (Path.to_string sourcePath)
       (Path.to_string (name ".cmj"));
-  /* TODO: do we even need the cmj file here? */
+
+  /** TODO: do we even need the cmj file here? */
   let compileRule = Rule.simple targets::targets deps::[Dep.path sourcePath] action::action;
   let contentRule =
     Rule.create targets::[sourcePath] (Dep.return (Action.save fileContent target::sourcePath));
   Scheme.rules [contentRule, compileRule]
 };
 
-/* We perform name spacing magic for only dependencies.*/
 let compileSourcesScheme
     libRoot::libRoot
     buildDir::buildDir
     libName::libName
     target::target
-    sourcePaths::sourcePaths
-    isTopLevelLib::isTopLevelLib => {
+    sourcePaths::sourcePaths => {
+  let isTopLevelLib = libRoot == Path.the_root;
   let buildDirRoot = Path.dirname buildDir;
-  /* compiling here only needs cmis. If the interface signature doesn't change, ocaml doesn't need
-     to recompile the dependent modules. Win. */
+
+  /** Get npm dependencies and ocamlfind dependencies from the package's package.json.
+      These are just possibles dependencies. We compute them so that we have a way
+      segregate the deps that ocamldep oututs  */
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libRoot;
   let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libRoot;
 
@@ -133,7 +135,7 @@ let compileSourcesScheme
     ) |> Dep.all_unit
   };
 
-  /**  */
+  /** Compile each file with all it's dependecies */
   let compilePathScheme path::path (firstPartyDeps, npmPkgs, ocamlfindPkgs) => {
     let isInterface' = isInterface path;
     let hasInterface' = hasInterface sourcePaths::sourcePaths path;
@@ -160,13 +162,12 @@ let compileSourcesScheme
        print_endline ("Build Dir: " ^ tsp buildDir);
        print_endline ("Lib Dir: " ^ tsp libDir); */
 
-    /** Rule for compiling .re/rei/ml/mli to .js **/
-    /*
-       More Flags:
-         -bs-package-output  set npm-output-path: [opt_module]:path, for example: 'lib/cjs', 'amdjs:lib/amdjs' and 'goog:lib/gjs'
+    /** Rule for compiling .re/rei/ml/mli to .js
 
-         -bs-package-name is set `self` to that it produces right require calls.
-     */
+        More Flags:
+        -bs-package-output  set npm-output-path: [opt_module]:path, for example: 'lib/cjs', 'amdjs:lib/amdjs' and 'goog:lib/gjs'
+
+        -bs-package-name is set `self` to that it produces right require calls. */
     let action =
       bashf
         (
@@ -188,8 +189,9 @@ let compileSourcesScheme
         (tsp path);
 
     /** Compute the artifacts extensions generate for each file type and then generate the
-        correct build dir path for them **/
-    /* FIXME Due to BuckleScript bug #757, we around it by using simplePath **/
+        correct build dir path for them
+
+        FIXME Due to BuckleScript bug #757, we around it by using simplePath **/
     let targets =
       if isInterface' {
         [namespacedPath ".cmi"]
@@ -243,7 +245,8 @@ let compileSourcesScheme
     let bucklescriptTargets =
       rebelConfig.targets |> List.filter f::(fun t => t.engine == "bucklescript");
 
-    /**  */
+    /** All after all the compilation with bsc finishes. Duplicate the final target
+        file with entry path name */
     let copyTargetRule target => {
       let source = target.entry |> rel dir::Path.the_root;
       let buildDir = rel dir::(rel dir::build target.target) (tsp topSrcDir);
@@ -285,33 +288,37 @@ let matchImplIntfFiles path implPaths::implPaths => {
 let compileLibScheme
     libName::libName
     isTopLevelLib::isTopLevelLib
-    libDir::libDir
+    libRoot::libRoot
     target::target
     buildDir::buildDir => {
+  let libDir = rel dir::libRoot "src";
+
+  /** Construct schemes for modules alias, source files  */
+  let compileLibScheme' unsortedPaths => Scheme.all [
+    moduleAliasFileScheme buildDir::buildDir sourcePaths::unsortedPaths libName::libName,
+    compileSourcesScheme
+      libRoot::libRoot
+      buildDir::buildDir
+      libName::libName
+      target::target
+      sourcePaths::unsortedPaths
+  ];
+
+  /** compute all the files in libDir recursively */
+  let sourcePaths = getSourceFiles dir::libDir;
+  /* If the current lib is toplevel lib, then we compute the paths that only dependencies of enty path */
+  /* TODO entry paths are possibly sorted no need to sort them again. But it doesn't work fully */
   let entryPaths =
     isTopLevelLib ?
       {
         let entry = rel dir::Path.the_root target.entry;
-        let sourcePaths = getSourceFiles dir::libDir;
         OcamlDep.entryPointDependencies entry::entry paths::sourcePaths target::target |>
         mapD (
           fun implPaths => List.filter sourcePaths f::(matchImplIntfFiles implPaths::implPaths)
         )
       } :
-      Dep.all (getSourceFiles dir::libDir |> List.map f::Dep.return);
-  entryPaths |>
-  mapD (
-    fun unsortedPaths => Scheme.all [
-      moduleAliasFileScheme buildDir::buildDir sourcePaths::unsortedPaths libName::libName,
-      compileSourcesScheme
-        libRoot::(Path.dirname libDir)
-        buildDir::buildDir
-        libName::libName
-        target::target
-        sourcePaths::unsortedPaths
-        isTopLevelLib::isTopLevelLib
-    ]
-  ) |> Scheme.dep
+      Dep.all (sourcePaths |> List.map f::Dep.return);
+  entryPaths |> mapD compileLibScheme' |> Scheme.dep
 };
 
 let bucklescriptTargets =
@@ -336,13 +343,11 @@ let scheme dir::dir =>
     let targetConfig = findTarget targetName;
     let isTopLevelLib = Path.basename dir == "src";
     let libName = isTopLevelLib ? Lib (targetName ^ "_Tar") : Lib (Path.basename dir);
-    let libDir = isTopLevelLib ? topSrcDir : rel dir::(rel dir::nodeModulesRoot dirName) "src";
-
-    /**  */
+    let libRoot = isTopLevelLib ? Path.the_root : rel dir::nodeModulesRoot dirName;
     switch targetConfig.engine {
     | "bucklescript" =>
       compileLibScheme
-        libDir::libDir
+        libRoot::libRoot
         isTopLevelLib::isTopLevelLib
         libName::libName
         buildDir::dir

@@ -453,13 +453,13 @@ let compileLibScheme
           libRoot::libRoot
           libName::libName
           target::target
-          sourcePaths::unsortedPaths,
+          sourcePaths::sortedPaths,
         compileSourcesScheme
           libRoot::libRoot
           buildDir::buildDir
           target::target
           libName::libName
-          sourcePaths::unsortedPaths,
+          sourcePaths::sortedPaths,
         isTopLevelLib ?
           /* if we're at the final, top level compilation, there's no need to build a cma output (and
              then generate an executable from it). We can cut straight to generating the executable. See
@@ -470,9 +470,10 @@ let compileLibScheme
             buildDir::buildDir target::target libName::libName sortedSourcePaths::sortedPaths
       ]
     );
-  /** compute all the files in libDir recursively. If the current lib is toplevel lib, then we compute the
-    paths  */
+
+  /** compute all the files in libDir recursively */
   let sourcePaths = getSourceFiles dir::libDir;
+  /* If the current lib is toplevel lib, then we compute the paths that only dependencies of enty path */
   /* TODO entry paths are possibly sorted no need to sort them again. But it doesn't work fully */
   let entryPaths =
     isTopLevelLib ?
@@ -518,8 +519,6 @@ let scheme dir::dir =>
     let isTopLevelLib = packageName == "src";
     let libName = isTopLevelLib ? Lib (targetName ^ "_Tar") : Lib (Path.basename dir);
     let libRoot = isTopLevelLib ? Path.dirname topSrcDir : rel dir::nodeModulesRoot packageName;
-
-    /** start compile */
     switch targetConfig.engine {
     | "jsoo"
     | "byte"
