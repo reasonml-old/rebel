@@ -8,8 +8,6 @@ let module Dep = Jenga_lib.Api.Dep;
 
 let module Path = Jenga_lib.Api.Path;
 
-let module Glob = Jenga_lib.Api.Glob;
-
 let module Rule = Jenga_lib.Api.Rule;
 
 let module Action = Jenga_lib.Api.Action;
@@ -17,11 +15,6 @@ let module Action = Jenga_lib.Api.Action;
 let module Scheme = Jenga_lib.Api.Scheme;
 
 open Utils;
-
-let jsOutput =
-  rebelConfig.targets |> List.filter f::(fun t => t.engine == "bucklescript") |>
-  List.map f::(fun t => t.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir) |>
-  List.map f::(fun t => rel dir::(rel dir::build (tsp topSrcDir)) (t ^ ".js"));
 
 /* the module alias file takes the current library foo's first-party sources, e.g. A.re, B.re, and turn them
    into a foo.ml file whose content is:
@@ -41,45 +34,43 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
   let sourcePath = name ".ml";
   let targets = [".cmj", ".cmi", ".cmt"] |> List.map f::name;
 
-  /** We omit interface to create the alias file  */
+  /**  */
+  let moduleAliasCode path => {
+    let moduleName = tsm (pathToModule path);
+    let moduleAliasedName = namespacedName libName::libName path::path;
+    Printf.sprintf "module %s = %s\n" moduleName moduleAliasedName
+  };
+
+  /** We omit interface to create the alias file **/
   let sourceNotInterfacePaths = List.filter sourcePaths f::(fun path => not (isInterface path));
-  let fileContent =
-    sourceNotInterfacePaths |>
-    List.map
-      f::(
-        fun path =>
-          Printf.sprintf
-            "module %s = %s\n"
-            (tsm (pathToModule path))
-            (namespacedName libName::libName path::path)
-      ) |>
-    String.concat sep::"";
+  let fileContent = List.map sourceNotInterfacePaths f::moduleAliasCode |> String.concat sep::"";
+
+  /** We suppress a few warnings here through -w.
+      - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
+      can't be found at the moment this module alias file is compiled. This is normal, since the
+      module alias file is the first thing that's compiled (so that we can open it during
+      compilation of A.re and B.re into Foo__A and Foo__B). Think of this as forward declaration.
+
+      - 30: Two labels or constructors of the same name are defined in two mutually recursive
+      types. I forgot...
+
+      - 40: Constructor or label name used out of scope. I forgot too. Great comment huh?
+
+      More flags:
+      -pp refmt option makes ocamlc take our reason syntax source code and pass it through our
+      refmt parser first, before operating on the AST.
+
+      -bin-annot: generates cmt files that contains info such as types and bindings, for use with
+      Merlin.
+
+      -g: add debugging info. You don't really ever compile without this flag.
+
+      -impl: source file. This flag's needed if the source extension isn't ml. I think.
+
+      -o: output name
+      */
   let action =
     bashf
-      /* We suppress a few warnings here through -w.
-         - 49: Absent cmi file when looking up module alias. Aka Foo__A and Foo__B's compiled cmis
-         can't be found at the moment this module alias file is compiled. This is normal, since the
-         module alias file is the first thing that's compiled (so that we can open it during
-         compilation of A.re and B.re into Foo__A and Foo__B). Think of this as forward declaration.
-
-         - 30: Two labels or constructors of the same name are defined in two mutually recursive
-         types. I forgot...
-
-         - 40: Constructor or label name used out of scope. I forgot too. Great comment huh?
-
-         More flags:
-         -pp refmt option makes ocamlc take our reason syntax source code and pass it through our
-         refmt parser first, before operating on the AST.
-
-         -bin-annot: generates cmt files that contains info such as types and bindings, for use with
-         Merlin.
-
-         -g: add debugging info. You don't really ever compile without this flag.
-
-         -impl: source file. This flag's needed if the source extension isn't ml. I think.
-
-         -o: output name
-         */
       "bsc.exe -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
       (Path.to_string sourcePath)
       (Path.to_string (name ".cmj"));
@@ -142,156 +133,146 @@ let compileSourcesScheme
     ) |> Dep.all_unit
   };
 
+  /**  */
+  let compilePathScheme path::path (firstPartyDeps, npmPkgs, ocamlfindPkgs) => {
+    let isInterface' = isInterface path;
+    let hasInterface' = hasInterface sourcePaths::sourcePaths path;
+
+    /** Helper functions to generate build dir paths **/
+    let namespacedPath ext => rel dir::buildDir (namespacedName libName::libName path::path ^ ext);
+
+    /** flag to include all the dependencies build dir's **/
+    let includeDir =
+      npmPkgs |> List.map f::(fun libName => "-I " ^ tsp (rel dir::buildDirRoot (tsl libName))) |>
+      String.concat sep::" ";
+
+    /** Flag for including ocamlfind packages */
+    let ocamlfindPackagesStr =
+      switch ocamlfindPkgs {
+      | [] => ""
+      | libs => "-bs-package-include " ^ (libs |> List.map f::tsl |> String.concat sep::",")
+      };
+
+    /** Debug Info */
+    /* print_endline ("Path: " ^ tsp path);
+       print_endline "First Party Deps: ";
+       print_endline ("Had Interface: " ^ string_of_bool hasInterface');
+       print_endline ("Build Dir: " ^ tsp buildDir);
+       print_endline ("Lib Dir: " ^ tsp libDir); */
+
+    /** Rule for compiling .re/rei/ml/mli to .js **/
+    /*
+       More Flags:
+         -bs-package-output  set npm-output-path: [opt_module]:path, for example: 'lib/cjs', 'amdjs:lib/amdjs' and 'goog:lib/gjs'
+
+         -bs-package-name is set `self` to that it produces right require calls.
+     */
+    let action =
+      bashf
+        (
+          if isInterface' {
+            "bsc.exe -g %s -pp refmt -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
+          } else if (
+            hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
+          ) {
+            "bsc.exe -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+          } else {
+            "bsc.exe -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+          }
+        )
+        ocamlfindPackagesStr
+        (tsp buildDir)
+        ("-open " ^ tsm (libToModule libName))
+        (includeDir ^ " -I " ^ tsp buildDir)
+        (tsp (namespacedPath ""))
+        (tsp path);
+
+    /** Compute the artifacts extensions generate for each file type and then generate the
+        correct build dir path for them **/
+    /* FIXME Due to BuckleScript bug #757, we around it by using simplePath **/
+    let targets =
+      if isInterface' {
+        [namespacedPath ".cmi"]
+      } else {
+        let extns =
+          if hasInterface' {
+            [".cmj", ".cmt", ".js"]
+          } else {
+            [".cmi", ".cmj", ".cmt", ".js"]
+          };
+        List.map f::namespacedPath extns
+      };
+
+    /** FIXME is this comment valid?
+        compiling here only needs cmjs. If the interface signature doesn't change, ocaml doesn't need
+        to recompile the dependent modules. Win. */
+    let firstPartyArtifact path => [
+      relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmj"),
+      relD dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js")
+    ];
+    let firstPartyArtifacts =
+      sourcePaths |>
+      List.filter f::(fun path => List.exists firstPartyDeps f::(fun m => m == pathToModule path)) |>
+      List.map f::firstPartyArtifact |>
+      List.fold init::[] f::(@);
+    let firstPartyArtifacts =
+      if hasInterface' {
+        [
+          /* We're a source file with an interface; include our own cmi as a dependency (our interface
+             file should compile before ourselves). */
+          relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi"),
+          ...firstPartyArtifacts
+        ]
+      } else {
+        firstPartyArtifacts
+      };
+    let thirdPartyArtifacts = List.map npmPkgs f::computeNpmLibArtifacts |> Dep.all_unit;
+
+    /** The overall dependecies include the cmj artifacts of the both self and third party
+        and interface artifact if an interface exits **/
+    let deps = [Dep.path path, thirdPartyArtifacts, moduleAliasDep, ...firstPartyArtifacts];
+
+    /** Workaround for BuckleScript bug https://github.com/bloomberg/bucklescript/issues/757
+        Action to copy the file to match require call */
+    let copyTarget = rel dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
+    let copyAction = bashf "cp %s %s" (tsp (namespacedPath ".js")) (tsp copyTarget);
+    let copyRule =
+      Rule.simple targets::[copyTarget] deps::[Dep.path (namespacedPath ".js")] action::copyAction;
+    let bucklescriptTargets =
+      rebelConfig.targets |> List.filter f::(fun t => t.engine == "bucklescript");
+
+    /**  */
+    let copyTargetRule target => {
+      let source = target.entry |> rel dir::Path.the_root;
+      let buildDir = rel dir::(rel dir::build target.target) (tsp topSrcDir);
+      let copyDep =
+        rel
+          dir::buildDir
+          (bsNamespacedName libName::(Lib (target.target ^ "_Tar")) path::source ^ ".js");
+      let copyTarget = rel dir::buildDir ((source |> fileNameNoExtNoDir) ^ ".js");
+      let copyAction = bashf "cp %s %s" (tsp copyDep) (tsp copyTarget);
+      Rule.simple targets::[copyTarget] deps::[Dep.path copyDep] action::copyAction
+    };
+    let copyTargetRules = isTopLevelLib ? List.map bucklescriptTargets f::copyTargetRule : [];
+
+    /** Compile JS from BuckleScript and copy the file to match require call */
+    Scheme.rules [
+      Rule.simple targets::targets deps::deps action::action,
+      copyRule,
+      ...copyTargetRules
+    ]
+  };
+
   /** Compute build graph (targets, dependencies) for the current path */
-  let compilePathScheme path =>
+  let compilePathScheme' path =>
     OcamlDep.ocamlDepSource
       sourcePath::path
       paths::sourcePaths
       npmPkgs::thirdPartyNpmLibs
       target::target
       ocamlfindPkgs::thirdPartyOcamlfindLibNames |>
-    mapD (
-      fun (firstPartyDeps, npmPkgs, ocamlfindPkgs) => {
-        let isInterface' = isInterface path;
-        let hasInterface' = hasInterface sourcePaths::sourcePaths path;
-
-        /** Helper functions to generate build dir paths **/
-        let namespacedPath ext =>
-          rel dir::buildDir (namespacedName libName::libName path::path ^ ext);
-
-        /** flag to include all the dependencies build dir's **/
-        let includeDir =
-          npmPkgs |> List.map f::(fun libName => "-I " ^ tsp (rel dir::buildDirRoot (tsl libName))) |>
-          String.concat sep::" ";
-
-        /** Flag for including ocamlfind packages */
-        let ocamlfindPackagesStr =
-          switch ocamlfindPkgs {
-          | [] => ""
-          | libs => "-bs-package-include " ^ (libs |> List.map f::tsl |> String.concat sep::",")
-          };
-
-        /** Debug Info */
-        /* print_endline ("Path: " ^ tsp path);
-           print_endline "First Party Deps: ";
-           print_endline ("Had Interface: " ^ string_of_bool hasInterface');
-           print_endline ("Build Dir: " ^ tsp buildDir);
-           print_endline ("Lib Dir: " ^ tsp libDir); */
-
-        /** Rule for compiling .re/rei/ml/mli to .js **/
-        /*
-           More Flags:
-             -bs-package-output  set npm-output-path: [opt_module]:path, for example: 'lib/cjs', 'amdjs:lib/amdjs' and 'goog:lib/gjs'
-
-             -bs-package-name is set `self` to that it produces right require calls.
-         */
-        let action =
-          bashf
-            (
-              if isInterface' {
-                "bsc.exe -g %s -pp refmt -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
-              } else if (
-                hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
-              ) {
-                "bsc.exe -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
-              } else {
-                "bsc.exe -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
-              }
-            )
-            ocamlfindPackagesStr
-            (tsp buildDir)
-            ("-open " ^ tsm (libToModule libName))
-            (includeDir ^ " -I " ^ tsp buildDir)
-            (tsp (namespacedPath ""))
-            (tsp path);
-
-        /** Compute the artifacts extensions generate for each file type and then generate the
-            correct build dir path for them **/
-        /* FIXME Due to BuckleScript bug #757, we around it by using simplePath **/
-        let targets =
-          if isInterface' {
-            [namespacedPath ".cmi"]
-          } else {
-            let extns =
-              if hasInterface' {
-                [".cmj", ".cmt", ".js"]
-              } else {
-                [".cmi", ".cmj", ".cmt", ".js"]
-              };
-            List.map f::namespacedPath extns
-          };
-
-        /** FIXME is this comment valid?
-            compiling here only needs cmjs. If the interface signature doesn't change, ocaml doesn't need
-            to recompile the dependent modules. Win. */
-        let firstPartyArtifacts =
-          sourcePaths |>
-          List.filter
-            f::(fun path => List.exists firstPartyDeps f::(fun m => m == pathToModule path)) |>
-          List.map
-            f::(
-              fun path => [
-                relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmj"),
-                relD dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js")
-              ]
-            ) |>
-          List.fold init::[] f::(@);
-        let firstPartyArtifacts =
-          if hasInterface' {
-            [
-              /* We're a source file with an interface; include our own cmi as a dependency (our interface
-                 file should compile before ourselves). */
-              relD dir::buildDir (namespacedName libName::libName path::path ^ ".cmi"),
-              ...firstPartyArtifacts
-            ]
-          } else {
-            firstPartyArtifacts
-          };
-        let thirdPartyArtifacts = List.map npmPkgs f::computeNpmLibArtifacts |> Dep.all_unit;
-
-        /** The overall dependecies include the cmj artifacts of the both self and third party
-            and interface artifact if an interface exits **/
-        let deps = [Dep.path path, thirdPartyArtifacts, moduleAliasDep, ...firstPartyArtifacts];
-
-        /** Workaround for BuckleScript bug https://github.com/bloomberg/bucklescript/issues/757
-            Action to copy the file to match require call */
-        let copyTarget = rel dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
-        let copyAction = bashf "cp %s %s" (tsp (namespacedPath ".js")) (tsp copyTarget);
-        let copyRule =
-          Rule.simple
-            targets::[copyTarget] deps::[Dep.path (namespacedPath ".js")] action::copyAction;
-        let bucklescriptTargets =
-          rebelConfig.targets |> List.filter f::(fun t => t.engine == "bucklescript");
-        let copyTargetRules =
-          isTopLevelLib ?
-            List.map
-              bucklescriptTargets
-              f::(
-                fun target => {
-                  let source = target.entry |> rel dir::Path.the_root;
-                  let buildDir = rel dir::(rel dir::build target.target) (tsp topSrcDir);
-                  let copyDep =
-                    rel
-                      dir::buildDir
-                      (
-                        bsNamespacedName libName::(Lib (target.target ^ "_Tar")) path::source ^ ".js"
-                      );
-                  let copyTarget = rel dir::buildDir ((source |> fileNameNoExtNoDir) ^ ".js");
-                  let copyAction = bashf "cp %s %s" (tsp copyDep) (tsp copyTarget);
-                  Rule.simple targets::[copyTarget] deps::[Dep.path copyDep] action::copyAction
-                }
-              ) :
-            [];
-
-        /** Compile JS from BuckleScript and copy the file to match require call */
-        Scheme.rules [
-          Rule.simple targets::targets deps::deps action::action,
-          copyRule,
-          ...copyTargetRules
-        ]
-      }
-    );
-  Scheme.all (List.map sourcePaths f::(fun path => compilePathScheme path |> Scheme.dep))
+    mapD (compilePathScheme path::path);
+  Scheme.all (List.map sourcePaths f::(fun path => compilePathScheme' path |> Scheme.dep))
 };
 
 let compileLibScheme
@@ -307,16 +288,12 @@ let compileLibScheme
         let sourcePaths = getSourceFiles dir::libDir;
         OcamlDep.entryPointDependencies entry::entry paths::sourcePaths target::target |>
         mapD (
-          fun entryImplPaths => {
-            let entryImplPaths = List.map entryImplPaths f::pathToModule;
-            List.filter
-              sourcePaths
-              f::(
-                fun sp => {
-                  let sp = pathToModule sp;
-                  List.exists entryImplPaths f::(fun ep => ep == sp)
-                }
-              )
+          fun implPaths => {
+            let matchImplIntfFiles path => {
+              let sp = pathToModule path;
+              implPaths |> List.map f::pathToModule |> List.exists f::(fun ep => ep == sp)
+            };
+            List.filter sourcePaths f::matchImplIntfFiles
           }
         )
       } :
@@ -343,7 +320,6 @@ let targetOutputFile target => {
   let fileName = target.entry |> rel dir::Path.the_root |> fileNameNoExtNoDir;
   let buildDir = rel dir::(rel dir::build target.target) (tsp topSrcDir);
   relD dir::buildDir (fileName ^ ".js")
-  /* relD dir::buildDir (bsNamespacedName libName::topLibName path::source ^ ".js") */
 };
 
 let defaultPaths = List.map bucklescriptTargets f::targetOutputFile;
@@ -360,16 +336,17 @@ let scheme dir::dir =>
     let isTopLevelLib = Path.basename dir == "src";
     let libName = isTopLevelLib ? Lib (targetName ^ "_Tar") : Lib (Path.basename dir);
     let libDir = isTopLevelLib ? topSrcDir : rel dir::(rel dir::nodeModulesRoot dirName) "src";
-    let {engine} = targetConfig;
-    if (engine == "bucklescript") {
+
+    /**  */
+    switch targetConfig.engine {
+    | "bucklescript" =>
       compileLibScheme
         libDir::libDir
         isTopLevelLib::isTopLevelLib
         libName::libName
         buildDir::dir
         target::targetConfig
-    } else {
-      Scheme.no_rules
+    | _ => Scheme.no_rules
     }
   } else {
     Scheme.no_rules

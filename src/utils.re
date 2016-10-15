@@ -50,6 +50,13 @@ let bindD f dep => Dep.bind dep f;
 let mapD f dep => Dep.map dep f;
 
 
+/** Constants Paths */
+let nodeModulesRoot = rel dir::Path.the_root "node_modules";
+
+let build = rel dir::Path.the_root "_build";
+
+let topSrcDir = rel dir::Path.the_root "src";
+
 /** Path helpers **/
 let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
 
@@ -64,18 +71,12 @@ let hasInterface sourcePaths::sourcePaths path =>
     sourcePaths
     f::(fun path' => isInterface path' && fileNameNoExtNoDir path' == fileNameNoExtNoDir path);
 
-let nodeModulesRoot = rel dir::Path.the_root "node_modules";
-
-let build = rel dir::Path.the_root "_build";
-
-let topSrcDir = rel dir::Path.the_root "src";
-
 let getSubDirs dir::dir =>
   Core.Core_sys.ls_dir (tsp dir) |>
   List.filter f::(fun subDir => Core.Core_sys.is_directory_exn (tsp (rel dir::dir subDir))) |>
   List.map f::(fun subDir => rel dir::dir subDir);
 
-let rec getNestedSubDirs dir::dir =>
+let rec getNestedSubDirs dir::dir => {
   List.fold
     (getSubDirs dir)
     init::[]
@@ -84,27 +85,22 @@ let rec getNestedSubDirs dir::dir =>
         let nestedSubDirs = getNestedSubDirs dir::subDir;
         acc @ [subDir] @ nestedSubDirs
       }
-    );
+    )
+};
+
+let isImplOrIntfFile file =>
+  String.is_suffix file suffix::".rei" ||
+  String.is_suffix file suffix::".mli" ||
+  String.is_suffix file suffix::".re" || String.is_suffix file suffix::".ml";
 
 let getSourceFiles dir::dir => {
   let allDirs = [dir] @ getNestedSubDirs dir::dir;
-  List.fold
-    allDirs
-    init::[]
-    f::(
-      fun acc subDir =>
-        (
-          Core.Core_sys.ls_dir (tsp subDir) |>
-          List.filter
-            f::(
-              fun file =>
-                String.is_suffix file suffix::".rei" ||
-                String.is_suffix file suffix::".mli" ||
-                String.is_suffix file suffix::".re" || String.is_suffix file suffix::".ml"
-            ) |>
-          List.map f::(fun file => rel dir::subDir file)
-        ) @ acc
-    )
+  let getFilesInDir acc subDir =>
+    (
+      Core.Core_sys.ls_dir (tsp subDir) |> List.filter f::isImplOrIntfFile |>
+      List.map f::(fun file => rel dir::subDir file)
+    ) @ acc;
+  List.fold allDirs init::[] f::getFilesInDir
 };
 
 
@@ -125,9 +121,8 @@ let convertBuildDirToLibDir buildDir::buildDir target::target => {
 
   /** prepare base src path */
   let packageName = extractPackageName dir::buildDir;
-  let basePath =
-    packageName == "src" ?
-      rel dir::Path.the_root "src" : rel dir::(rel dir::nodeModulesRoot packageName) "src";
+  let libRoot = packageName == "src" ? Path.the_root : rel dir::nodeModulesRoot packageName;
+  let basePath = rel dir::libRoot "src";
 
   /** TODO write examples */
   if (List.length pathComponents == 1) {

@@ -8,17 +8,11 @@ let module Dep = Jenga_lib.Api.Dep;
 
 let module Path = Jenga_lib.Api.Path;
 
-let module Glob = Jenga_lib.Api.Glob;
-
 let module Rule = Jenga_lib.Api.Rule;
 
 let module Action = Jenga_lib.Api.Action;
 
 let module Scheme = Jenga_lib.Api.Scheme;
-
-let module Run = Jenga_lib.Run;
-
-let module Env = Jenga_lib.Api.Env;
 
 open Utils;
 

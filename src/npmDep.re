@@ -6,7 +6,7 @@ open Core.Std;
 
 open Yojson.Basic;
 
-open Jenga_lib.Api;
+let module Path = Jenga_lib.Api.Path;
 
 open Utils;
 

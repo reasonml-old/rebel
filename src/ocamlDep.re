@@ -18,10 +18,10 @@ open Utils;
 let ocamlDep source::source target::target => {
   let flag = isInterface source ? "-intf" : "-impl";
   let ppx = target.engine == "bucklescript" ? "-ppx bsppx.exe" : "";
+  /* betterError doesn't support bucklescript yet */
   let berror = target.engine == "bucklescript" ? "" : "| berror";
-  /* let ppx = "";
-  let berror = "| berror"; */
-  /* seems like refmt intelligently detects source code type (re/ml) */
+
+  /** seems like refmt intelligently detects source code type (re/ml) */
   let getDepAction () =>
     bashf
       "ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s 2>&1 %s; (exit ${PIPESTATUS[0]})"
@@ -42,29 +42,13 @@ let ocamlDep source::source target::target => {
 };
 
 /* Get only the dependencies on sources in the current library. */
-let ocamlDepCurrentSources sourcePath::sourcePath paths::paths target::target =>
-  ocamlDep source::sourcePath target::target |>
-  mapD (
-    fun (source, deps) => {
-      let originalModule = pathToModule source;
-      /* Dedupe, because we might have foo.re and foo.rei */
-      let sourceModules = List.map paths f::pathToModule |> List.dedup;
-      /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
-         itself, which means that Foo either comes from a third-party module (which we can ignore
-         here), or is a nested module from an `open`ed module, which ocamldep would have detected and
-         returned in this list. */
-      List.filter deps f::(fun m => m != originalModule) |>
-      List.filter f::(fun m => List.exists sourceModules f::(fun m' => m == m'))
-    }
-  );
-
-let sourceFirstPartyDepdendencies source::source paths::paths target::target =>
+let sourceSelfDependencies source::source paths::paths target::target =>
   ocamlDep source::source target::target |>
   mapD (
     fun (source, deps) => {
       let originalModule = pathToModule source;
-      /* Dedupe, because we might have foo.re and foo.rei */
-      let paths = List.filter paths f::(fun p => not @@ isInterface p);
+      /* Filter  foo.rei */
+      let paths = List.filter paths f::(fun p => not (isInterface p));
       /* If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
          itself, which means that Foo either comes from a third-party module (which we can ignore
          here), or is a nested module from an `open`ed module, which ocamldep would have detected and
@@ -74,25 +58,27 @@ let sourceFirstPartyDepdendencies source::source paths::paths target::target =>
     }
   );
 
+let sourceSelfModDeps source::source paths::paths target::target =>
+  sourceSelfDependencies source::source paths::paths target::target |>
+  mapD (fun paths => List.map paths f::pathToModule);
+
 let entryPointDependencies entry::entry paths::paths target::target => {
-  let rec recComputeDeps acc::acc sourcePaths::sourcePaths =>
+  let rec computeDeps acc::acc sourcePaths::sourcePaths =>
     switch sourcePaths {
     | [] => acc
     | [source, ...rest] =>
-      acc |>
-      bindD (
-        fun entryDeps =>
-          List.exists entryDeps f::(fun p => p == source) ?
-            recComputeDeps acc::acc sourcePaths::rest :
-            sourceFirstPartyDepdendencies source::source paths::paths target::target |>
-            bindD (
-              fun deps =>
-                recComputeDeps acc::(Dep.return (entryDeps @ [source])) sourcePaths::(rest @ deps)
-            )
-      )
+      let computeNext entryDeps =>
+        List.exists entryDeps f::(fun p => p == source) ?
+          computeDeps acc::acc sourcePaths::rest :
+          sourceSelfDependencies source::source paths::paths target::target |>
+          bindD (
+            fun deps =>
+              computeDeps acc::(Dep.return (entryDeps @ [source])) sourcePaths::(rest @ deps)
+          );
+      Dep.bind acc computeNext
     };
-  sourceFirstPartyDepdendencies source::entry paths::paths target::target |>
-  bindD (fun deps => recComputeDeps acc::(Dep.return [entry]) sourcePaths::deps)
+  sourceSelfDependencies source::entry paths::paths target::target |>
+  bindD (fun deps => computeDeps acc::(Dep.return [entry]) sourcePaths::deps)
 };
 
 /* Get only the dependencies on sources in the current library. */
@@ -117,30 +103,24 @@ let ocamlDepSource
           itself, which means that Foo either comes from a third-party module (which we can ignore
           here), or is a nested module from an `open`ed module, which ocamldep would have detected and
           returned in this list. */
+      let segregateDependencies (firstPartyDeps, npmPkgs', ocamlfindPkgs') m =>
+        if (List.exists sourceModules f::(fun m' => m == m')) {
+          (firstPartyDeps @ [m], npmPkgs', ocamlfindPkgs')
+        } else if (
+          List.exists npmPkgsModules f::(fun m' => m == m')
+        ) {
+          let pos = List.foldi init::0 f::(fun i acc m' => m' == m ? i : acc) npmPkgsModules;
+          (firstPartyDeps, npmPkgs' @ [List.nth_exn npmPkgs pos], ocamlfindPkgs')
+        } else if (
+          List.exists ocamlfindPkgsModules f::(fun m' => m == m')
+        ) {
+          let pos = List.foldi init::0 f::(fun i acc m' => m' == m ? i : acc) ocamlfindPkgsModules;
+          (firstPartyDeps, npmPkgs', ocamlfindPkgs' @ [List.nth_exn ocamlfindPkgs pos])
+        } else {
+          (firstPartyDeps, npmPkgs', ocamlfindPkgs')
+        };
       List.filter deps f::(fun m => m != originalModule) |>
-      List.fold
-        init::([], [], [])
-        f::(
-          fun (firstParty, npmPkgs', ocamlfindPkgs') m =>
-            if (List.exists sourceModules f::(fun m' => m == m')) {
-              (firstParty @ [m], npmPkgs', ocamlfindPkgs')
-            } else if (
-              List.exists npmPkgsModules f::(fun m' => m == m')
-            ) {
-              let pos =
-                List.foldi init::0 f::(fun i acc m' => m' == m ? acc + i : acc) npmPkgsModules;
-              (firstParty, npmPkgs' @ [List.nth_exn npmPkgs pos], ocamlfindPkgs')
-            } else if (
-              List.exists ocamlfindPkgsModules f::(fun m' => m == m')
-            ) {
-              let pos =
-                List.foldi
-                  init::0 f::(fun i acc m' => m' == m ? acc + i : acc) ocamlfindPkgsModules;
-              (firstParty, npmPkgs', ocamlfindPkgs' @ [List.nth_exn ocamlfindPkgs pos])
-            } else {
-              (firstParty, npmPkgs', ocamlfindPkgs')
-            }
-        )
+      List.fold init::([], [], []) f::segregateDependencies
     }
   );
 
@@ -152,7 +132,11 @@ let ocamlDepThirdPartyLib paths::paths libDir::libDir target::target => {
     f::(
       fun source =>
         ocamlDepSource
-          sourcePath::source paths::paths npmPkgs::npmPkgs ocamlfindPkgs::ocamlfindPkgs target::target
+          sourcePath::source
+          paths::paths
+          npmPkgs::npmPkgs
+          ocamlfindPkgs::ocamlfindPkgs
+          target::target
     ) |> Dep.all |>
   mapD (fun ls => List.fold init::([], []) ls f::(fun (n', o') (s, n, o) => (n' @ n, o' @ o))) |>
   mapD (fun (npmPkgs, ocamlfindPkgs) => (List.dedup npmPkgs, List.dedup ocamlfindPkgs))
@@ -194,9 +178,8 @@ let sortPathsTopologically paths::paths target::target => {
   let pathsAsModulesOriginalCapitalization =
     List.map paths f::(fun path => (pathToModule path, path));
   let pathsAsModules = List.map pathsAsModulesOriginalCapitalization f::fst;
-  let moduleDepsForPathsD =
-    paths |> List.map f::(fun path => ocamlDepCurrentSources sourcePath::path paths::paths target::target) |> Dep.all;
-  moduleDepsForPathsD |>
+  let selfModuleDepsOfPath path => sourceSelfModDeps source::path paths::paths target::target;
+  List.map paths f::selfModuleDepsOfPath |> Dep.all |>
   mapD (
     fun moduleDepsForPaths =>
       List.zip_exn pathsAsModules moduleDepsForPaths |> topologicalSort |>

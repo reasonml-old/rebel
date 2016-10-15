@@ -4,7 +4,9 @@
  */
 open Core.Std;
 
-open Jenga_lib.Api;
+let module Scheme = Jenga_lib.Api.Scheme;
+
+let module Env = Jenga_lib.Api.Env;
 
 open Utils;
 
