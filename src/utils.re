@@ -65,6 +65,8 @@ let isInterface path => {
   String.is_suffix base suffix::".rei" || String.is_suffix base suffix::".mli"
 };
 
+let isImplementation path => not (isInterface path);
+
 let hasInterface sourcePaths::sourcePaths path =>
   not (isInterface path) &&
   List.exists

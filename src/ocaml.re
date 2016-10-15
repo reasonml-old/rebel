@@ -59,7 +59,7 @@ let moduleAliasLibScheme
   };
 
   /** We omit interface to create the alias file **/
-  let sourceNotInterfacePaths = List.filter sourcePaths f::(fun path => not (isInterface path));
+  let sourceNotInterfacePaths = List.filter sourcePaths f::isImplementation;
   let fileContent = List.map sourceNotInterfacePaths f::moduleAliasCode |> String.concat sep::"";
 
   /** We suppress a few warnings here through -w.
@@ -444,32 +444,35 @@ let compileLibScheme
   let libDir = rel dir::libRoot "src";
 
   /** Construct schemes for modules alias, source files and cma artifact/final executable */
-  let compileLibScheme' unsortedPaths =>
-    OcamlDep.sortPathsTopologically paths::unsortedPaths target::target |>
+  let compileLibScheme' unsortedPaths => {
+    let implPaths = List.filter unsortedPaths f::isImplementation;
+    /* Passing impl paths because we only need the order of modules */
+    OcamlDep.sortPathsTopologically paths::implPaths target::target |>
     mapD (
-      fun sortedPaths => Scheme.all [
+      fun sortedImplPaths => Scheme.all [
         moduleAliasLibScheme
           buildDir::buildDir
           libRoot::libRoot
           libName::libName
           target::target
-          sourcePaths::sortedPaths,
+          sourcePaths::unsortedPaths,
         compileSourcesScheme
           libRoot::libRoot
           buildDir::buildDir
           target::target
           libName::libName
-          sourcePaths::sortedPaths,
+          sourcePaths::unsortedPaths,
         isTopLevelLib ?
           /* if we're at the final, top level compilation, there's no need to build a cma output (and
              then generate an executable from it). We can cut straight to generating the executable. See
              `finalOutputsScheme`. */
           finalOutputsScheme
-            buildDir::buildDir libName::libName target::target sortedSourcePaths::sortedPaths :
+            buildDir::buildDir libName::libName target::target sortedSourcePaths::sortedImplPaths :
           compileCmaScheme
-            buildDir::buildDir target::target libName::libName sortedSourcePaths::sortedPaths
+            buildDir::buildDir target::target libName::libName sortedSourcePaths::sortedImplPaths
       ]
-    );
+    )
+  };
 
   /** compute all the files in libDir recursively */
   let sourcePaths = getSourceFiles dir::libDir;
