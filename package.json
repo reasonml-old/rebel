@@ -22,6 +22,7 @@
   },
   "license": "ISC",
   "scripts": {
+    "rebel:me": "npm run rebel && ./rebel.sh examples/multiple-entrypoint",
     "rebel:re": "npm run rebel && ./rebel.sh examples/reason-project",
     "rebel:rs": "npm run rebel && ./rebel.sh examples/recursive-src",
     "rebel:bs": "npm run rebel && ./rebel.sh examples/bs-project",

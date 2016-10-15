@@ -18,7 +18,8 @@ S ./node_modules/Rexpress/src
 S ./node_modules/remath/src
 
 # B stands for build (artifacts). We generate ours into _build
-B ./_build/default/*
+B ./_build/client/*
+B ./_build/server/*
 
 # Bucklescript build artifacts
 B ./node_modules/bs-platform/lib/ocaml
@@ -33,10 +34,11 @@ B ./node_modules/bs-platform/lib/ocaml
 # understand our sources. You don't have to understand what these flags are for
 # now; but if you're curious, go check the rebel.ml that generated this
 # .merlin at https://github.com/reasonml/rebel
-FLG -w -30 -w -40 
+FLG -w -30 -w -40 -open Client_Tar -open Server_Tar
 
 # Currently the we use absolute path instead of relative path for bsppx.exe
 # due to bug in merlin but this will be fixed in future.
+More details on this github issue https://github.com/the-lambda-church/merlin/issues/571
 FLG -ppx /home/vramana/Documents/reasonml/rebel/examples/bs-project/node_modules/bs-platform/bin/bsppx.exe
 
 # User Custom config here

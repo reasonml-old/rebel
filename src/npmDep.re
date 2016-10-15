@@ -6,7 +6,7 @@ open Core.Std;
 
 open Yojson.Basic;
 
-open Jenga_lib.Api;
+let module Path = Jenga_lib.Api.Path;
 
 open Utils;
 
@@ -50,33 +50,4 @@ let getThirdPartyOcamlfindLibs libDir::libDir => {
   | Some (`List d) => d |> List.map f::Util.to_string |> List.map f::(fun name => Lib name)
   | _ => []
   }
-};
-
-/* Figure out the order in which third-party libs should be compiled, based on their dependencies (the
-   depended is compiled before the dependent). */
-let sortedTransitiveThirdPartyNpmLibsIncludingSelf's = {
-  let thirdPartyLibs = getThirdPartyNpmLibs libDir::Path.the_root;
-  let thirdPartyDeps =
-    List.map
-      thirdPartyLibs
-      f::(
-        fun name => {
-          /* third party's own third party libs */
-          let libDir = Path.relative dir::nodeModulesRoot (tsl name);
-          (name, getThirdPartyNpmLibs libDir::libDir)
-        }
-      );
-  /* `topologicalSort` will also return our own deps. */
-  topologicalSort thirdPartyDeps
-};
-
-let transitiveThirdPartyOcamlfindLibsIncludingSelf's = {
-  let thirdPartyNpmLibs = getThirdPartyNpmLibs libDir::Path.the_root;
-  let thirdPartyOcamlfindLibs = getThirdPartyOcamlfindLibs libDir::Path.the_root;
-  let thirdPartyLibDirs =
-    List.map thirdPartyNpmLibs f::(fun name => Path.relative dir::nodeModulesRoot (tsl name));
-  /* each third party's own third party libs */
-  let thirdPartiesThirdPartyOcamlfindLibNamesD =
-    List.map thirdPartyLibDirs f::(fun libDir => getThirdPartyOcamlfindLibs libDir::libDir);
-  thirdPartyOcamlfindLibs @ List.concat thirdPartiesThirdPartyOcamlfindLibNamesD |> List.dedup
 };

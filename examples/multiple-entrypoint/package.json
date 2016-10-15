@@ -1,0 +1,39 @@
+{
+  "name": "recursive-src",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "eval $(dependencyEnv) && rebel -show-actions-run-verbose -verbose -show-error-dependency-paths -brief-error-summary -show-buildable-discovery"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bs-platform": "^1.2.1"
+  },
+  "rebel": {
+    "targets": [
+      {
+        "target": "native",
+        "engine": "native",
+        "entry": "src/a.re"
+      },
+      {
+        "target": "byte",
+        "engine": "byte",
+        "entry": "src/a.re"
+      },
+      {
+        "target": "js-nice",
+        "engine": "bucklescript",
+        "entry": "src/a.re"
+      },
+      {
+        "target": "js-ugly",
+        "engine": "jsoo",
+        "entry": "src/a.re"
+      }
+    ]
+  }
+}

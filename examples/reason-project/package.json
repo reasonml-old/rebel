@@ -16,6 +16,13 @@
   "rebel": {
     "ocamlfindDependencies": [
       "core"
+    ],
+    "targets": [
+      {
+        "target": "default",
+        "engine": "byte",
+        "entry": "src/Index.re"
+      }
     ]
   }
 }

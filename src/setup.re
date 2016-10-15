@@ -4,23 +4,17 @@
  */
 open Core.Std;
 
-open Jenga_lib.Api;
+let module Scheme = Jenga_lib.Api.Scheme;
+
+let module Env = Jenga_lib.Api.Env;
 
 open Utils;
 
-let scheme dir::dir => {
-  ignore dir;
-  let backend = rebelConfig.backend;
-  switch backend {
-  | "bucklescript" => Scheme.all [Bucklescript.scheme dir::dir, Merlin.scheme dir::dir]
-  | "jsoo"
-  | "byte"
-  | "native" => Scheme.all [Ocaml.scheme dir::dir, Merlin.scheme dir::dir]
-  | _ =>
-    print_endline "Invalid backend it should be one of [ native, jsoo, bucklescript ]";
-    Scheme.no_rules
-  }
-};
+let scheme dir::dir => Scheme.all [
+  Ocaml.scheme dir::dir,
+  Bucklescript.scheme dir::dir,
+  Merlin.scheme dir::dir
+];
 
 let env () => Env.create
   /* TODO: this doesn't traverse down to _build so I can't ask it to clean files there? */
