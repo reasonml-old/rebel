@@ -88,8 +88,9 @@ let moduleAliasLibScheme
       */
   let action =
     bashf
-      "%s -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+      "%s -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 %s -c -impl %s -o %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
       compiler
+      target.flags.compile
       (tsp sourcePath)
       (tsp (moduleAliasPath cmox));
 
@@ -157,9 +158,9 @@ let compileSourcesScheme
     /** Hard Coded Rules for special packages */
     let extraFlags =
       if (List.mem ocamlfindPkgs (Lib "core")) {
-        "-thread -package threads"
+        "-thread -package threads " ^ target.flags.compile
       } else {
-        ""
+        target.flags.compile
       };
 
     /** Debug Info */
@@ -376,9 +377,9 @@ let finalOutputsScheme
     /* TODO add ocamlcFlags */
     let extraFlags =
       if (List.mem ocamlfindPkgs (Lib "core")) {
-        "-thread -package threads"
+        "-thread -package threads " ^ target.flags.link
       } else {
-        ""
+        target.flags.link
       };
 
     /** For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
@@ -416,7 +417,8 @@ let finalOutputsScheme
       bashf
         /* I don't know what the --linkall flag does, and does the --pretty flag work? Because the
            output is still butt ugly. Just kidding I love you guys. */
-        "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall -o %s %s"
+        "js_of_ocaml --source-map --no-inline --debug-info --pretty --linkall %s -o %s %s"
+        target.flags.jsoo
         (tsp jsOutput)
         (tsp binaryOutput);
     let javascriptRule =

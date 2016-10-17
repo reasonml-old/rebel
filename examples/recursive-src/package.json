@@ -14,5 +14,16 @@
     "remath": "github:vramana/remath"
   },
   "rebel": {
+    "targets": [
+      {
+        "target": "default",
+        "engine": "native",
+        "entry": "src/Index.re",
+        "unstable_flags": {
+          "link": "-inline 100",
+          "compile": "-verbose"
+        }
+      }
+    ]
   }
 }
