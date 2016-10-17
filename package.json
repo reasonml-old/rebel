@@ -9,7 +9,7 @@
     "@opam-alpha/yojson": "*",
     "nopam": "https://github.com/yunxing/nopam.git",
     "ocamlBetterErrors": "0.0.10",
-    "reason": "https://github.com/facebook/reason.git"
+    "reason": "1.4.0-source"
   },
   "devDependencies": {},
   "exportedEnvVars": {
