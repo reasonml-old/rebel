@@ -29,7 +29,7 @@ open Utils;
 
    Note that we're generating a ml file rather than re, because this rebel theoretically works on pure
    ocaml projects too, with no dep on reason. */
-let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::libName => {
+let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::libName target::target => {
   let name ext => rel dir::buildDir (tsm (libToModule libName) ^ ext);
   let sourcePath = name ".ml";
   let targets = [".cmj", ".cmi", ".cmt"] |> List.map f::name;
@@ -71,7 +71,8 @@ let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::l
       */
   let action =
     bashf
-      "bsc.exe -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
+      "bsc.exe -bin-annot -g %s -no-alias-deps -w -49 -w -30 -w -40 -c -impl %s -o %s 2>&1; (exit ${PIPESTATUS[0]})"
+      target.flags.compile
       (Path.to_string sourcePath)
       (Path.to_string (name ".cmj"));
 
@@ -172,15 +173,16 @@ let compileSourcesScheme
       bashf
         (
           if isInterface' {
-            "bsc.exe -g %s -pp refmt -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
+            "bsc.exe -g %s %s -pp refmt -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
           } else if (
             hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
           ) {
-            "bsc.exe -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+            "bsc.exe -g %s %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
           } else {
-            "bsc.exe -g %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+            "bsc.exe -g %s %s -pp refmt -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
           }
         )
+        target.flags.compile
         ocamlfindPackagesStr
         (tsp buildDir)
         ("-open " ^ tsm (libToModule libName))
@@ -295,7 +297,8 @@ let compileLibScheme
 
   /** Construct schemes for modules alias, source files  */
   let compileLibScheme' unsortedPaths => Scheme.all [
-    moduleAliasFileScheme buildDir::buildDir sourcePaths::unsortedPaths libName::libName,
+    moduleAliasFileScheme
+      buildDir::buildDir sourcePaths::unsortedPaths libName::libName target::target,
     compileSourcesScheme
       libRoot::libRoot
       buildDir::buildDir

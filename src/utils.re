@@ -57,6 +57,7 @@ let build = rel dir::Path.the_root "_build";
 
 let topSrcDir = rel dir::Path.the_root "src";
 
+
 /** Path helpers **/
 let fileNameNoExtNoDir path => Path.basename path |> chopSuffixExn;
 
@@ -78,7 +79,7 @@ let getSubDirs dir::dir =>
   List.filter f::(fun subDir => Core.Core_sys.is_directory_exn (tsp (rel dir::dir subDir))) |>
   List.map f::(fun subDir => rel dir::dir subDir);
 
-let rec getNestedSubDirs dir::dir => {
+let rec getNestedSubDirs dir::dir =>
   List.fold
     (getSubDirs dir)
     init::[]
@@ -87,8 +88,7 @@ let rec getNestedSubDirs dir::dir => {
         let nestedSubDirs = getNestedSubDirs dir::subDir;
         acc @ [subDir] @ nestedSubDirs
       }
-    )
-};
+    );
 
 let isImplOrIntfFile file =>
   String.is_suffix file suffix::".rei" ||
@@ -202,13 +202,16 @@ let topologicalSort graph => {
 };
 
 /* package.json helpers */
+type flags = {compile: string, link: string, jsoo: string};
+
 type target = {
   target: string,
   engine: string,
   entry: string,
   compiler: string,
   cmox: string,
-  cmax: string
+  cmax: string,
+  flags: flags
 };
 
 type config = {targets: list target};
@@ -217,6 +220,27 @@ let parseTarget t => {
   let target = Util.member "target" t |> Util.to_string;
   let engine = Util.member "engine" t |> Util.to_string;
   let entry = Util.member "entry" t |> Util.to_string;
+  let flags = t |> Util.to_option (fun a => a |> Util.member "unstable_flags");
+  let flags =
+    switch flags {
+    | Some f => f
+    | None => `Assoc []
+    };
+  let compile =
+    switch (flags |> Util.to_option (fun a => a |> Util.member "compile")) {
+    | Some (`String _ as a) => Util.to_string a
+    | _ => ""
+    };
+  let link =
+    switch (flags |> Util.to_option (fun a => a |> Util.member "link")) {
+    | Some (`String _ as a) => Util.to_string a
+    | _ => ""
+    };
+  let jsoo =
+    switch (flags |> Util.to_option (fun a => a |> Util.member "jsoo")) {
+    | Some (`String f) => f
+    | _ => ""
+    };
   let (compiler, cmox, cmax) =
     switch engine {
     | "native" => ("ocamlopt", ".cmx", ".cmxa")
@@ -225,7 +249,7 @@ let parseTarget t => {
     | "byte" => ("ocamlc", ".cmo", ".cma")
     | _ => ("", "", "")
     };
-  {target, engine, entry, compiler, cmox, cmax}
+  {target, engine, entry, compiler, cmox, cmax, flags: {compile, link, jsoo}}
 };
 
 let defaultTarget = {
@@ -234,7 +258,8 @@ let defaultTarget = {
   entry: "src/Index.re",
   compiler: "ocamlopt",
   cmox: ".cmx",
-  cmax: ".cmxa"
+  cmax: ".cmxa",
+  flags: {compile: "", link: "", jsoo: ""}
 };
 
 let rebelConfig = {
