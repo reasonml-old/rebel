@@ -88,7 +88,7 @@ let moduleAliasLibScheme
       */
   let action =
     bashf
-      "%s -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 %s -c -impl %s -o %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+      "ocamlfind %s -bin-annot -g -no-alias-deps -w -49 -w -30 -w -40 %s -c -impl %s -o %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
       compiler
       target.flags.compile
       (tsp sourcePath)
