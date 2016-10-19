@@ -27,6 +27,7 @@
     "rebel:rs": "npm run rebel && ./rebel.sh examples/recursive-src",
     "rebel:bs": "npm run rebel && ./rebel.sh examples/bs-project",
     "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh",
+    "editor": "eval $(dependencyEnv) && $EDITOR .",
     "postinstall": "npm run rebel"
   },
   "version": "0.0.23"
