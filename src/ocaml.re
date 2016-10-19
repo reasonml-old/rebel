@@ -185,13 +185,13 @@ let compileSourcesScheme
       bashf
         (
           if isInterface' {
-            "ocamlfind %s -verbose -pp refmt -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+            "ocamlfind %s -pp refmt -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
           } else if (
             hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
           ) {
-            "ocamlfind %s -verbose -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+            "ocamlfind %s -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
           } else {
-            "ocamlfind %s -verbose -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -impl %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+            "ocamlfind %s -pp refmt -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -impl %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
           }
         )
         compiler
@@ -398,7 +398,7 @@ let finalOutputsScheme
        */
     let action =
       bashf
-        "ocamlfind %s %s %s -verbose -g -open %s -o %s %s %s %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+        "ocamlfind %s %s %s -g -open %s -o %s %s %s %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
         compiler
         extraFlags
         ocamlfindPackagesStr
