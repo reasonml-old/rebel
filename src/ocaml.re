@@ -128,10 +128,10 @@ let compileSourcesScheme
       These are just possibles dependencies. We compute them so that we have a way
       segregate the deps that ocamldep oututs  */
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libRoot;
-  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libRoot;
+  let ocamlfindPkgs = NpmDep.getThirdPartyOcamlfindLibs libDir::libRoot;
 
   /** Compile each file with all it's dependecies */
-  let compileEachSourcePath path::path (firstPartyDeps, npmPkgs, ocamlfindPkgs) => {
+  let compileEachSourcePath path::path (firstPartyDeps, npmPkgs) => {
     let isInterface' = isInterface path;
     let hasInterface' = hasInterface sourcePaths::sourcePaths path;
 
@@ -254,9 +254,9 @@ let compileSourcesScheme
         if isInterface' {
           [".cmi"]
         } else if hasInterface' {
-          [cmox, ".cmt"] @ (target.engine == "native" ? [ ".o" ] : [])
+          [cmox, ".cmt"] @ (target.engine == "native" ? [".o"] : [])
         } else {
-          [cmox, ".cmi", ".cmt"] @ (target.engine == "native" ? [ ".o" ] : [])
+          [cmox, ".cmi", ".cmt"] @ (target.engine == "native" ? [".o"] : [])
         };
       List.map f::namespacedPath extns
     };
@@ -266,11 +266,7 @@ let compileSourcesScheme
   /** Compute build graph (targets, dependencies) for the current path */
   let compileEachSourcePath' path =>
     OcamlDep.ocamlDepSource
-      sourcePath::path
-      paths::sourcePaths
-      npmPkgs::thirdPartyNpmLibs
-      target::target
-      ocamlfindPkgs::thirdPartyOcamlfindLibNames |>
+      sourcePath::path paths::sourcePaths npmPkgs::thirdPartyNpmLibs target::target |>
     mapD (compileEachSourcePath path::path);
   Scheme.rules_dep (Dep.all (List.map sourcePaths f::compileEachSourcePath'))
 };
@@ -411,7 +407,9 @@ let finalOutputsScheme
         cmoxsString;
 
     /** TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-    let deps = (target.engine == "native" ? objectArtifacts : []) @ cmoxArtifacts @ transitiveCmaxs |> List.map f::Dep.path;
+    let deps =
+      (target.engine == "native" ? objectArtifacts : []) @ cmoxArtifacts @ transitiveCmaxs |>
+      List.map f::Dep.path;
     let nativeRule = [Rule.simple targets::[binaryOutput] deps::deps action::action];
 
     /** generate app.js from app.byte */
