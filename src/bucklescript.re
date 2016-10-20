@@ -29,7 +29,11 @@ open Utils;
 
    Note that we're generating a ml file rather than re, because this rebel theoretically works on pure
    ocaml projects too, with no dep on reason. */
-let moduleAliasFileScheme buildDir::buildDir sourcePaths::sourcePaths libName::libName target::target => {
+let moduleAliasFileScheme
+    buildDir::buildDir
+    sourcePaths::sourcePaths
+    libName::libName
+    target::target => {
   let name ext => rel dir::buildDir (tsm (libToModule libName) ^ ext);
   let sourcePath = name ".ml";
   let targets = [".cmj", ".cmi", ".cmt"] |> List.map f::name;
@@ -242,8 +246,15 @@ let compileSourcesScheme
         Action to copy the file to match require call */
     let copyTarget = rel dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
     let copyAction = bashf "cp %s %s" (tsp (namespacedPath ".js")) (tsp copyTarget);
+    /** We perform the copy only Linux because file are case-insensitive on OSX  */
     let copyRule =
-      Rule.simple targets::[copyTarget] deps::[Dep.path (namespacedPath ".js")] action::copyAction;
+      switch os_name {
+      | "Linux" => [
+          Rule.simple
+            targets::[copyTarget] deps::[Dep.path (namespacedPath ".js")] action::copyAction
+        ]
+      | _ => []
+      };
     let bucklescriptTargets =
       rebelConfig.targets |> List.filter f::(fun t => t.engine == "bucklescript");
 
@@ -263,11 +274,9 @@ let compileSourcesScheme
     let copyTargetRules = isTopLevelLib ? List.map bucklescriptTargets f::copyTargetRule : [];
 
     /** Compile JS from BuckleScript and copy the file to match require call */
-    Scheme.rules [
-      Rule.simple targets::targets deps::deps action::action,
-      copyRule,
-      ...copyTargetRules
-    ]
+    Scheme.rules (
+      [Rule.simple targets::targets deps::deps action::action] @ copyRule @ copyTargetRules
+    )
   };
 
   /** Compute build graph (targets, dependencies) for the current path */
