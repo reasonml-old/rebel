@@ -84,12 +84,7 @@ let entryPointDependencies entry::entry paths::paths target::target => {
 };
 
 /* Get only the dependencies on sources in the current library. */
-let ocamlDepSource
-    sourcePath::sourcePath
-    paths::paths
-    npmPkgs::npmPkgs
-    target::target
-    ocamlfindPkgs::ocamlfindPkgs => {
+let ocamlDepSource sourcePath::sourcePath paths::paths npmPkgs::npmPkgs target::target => {
   let segregateDeps (source, deps) => {
     let originalModule = pathToModule source;
 
@@ -97,32 +92,26 @@ let ocamlDepSource
     let sourceModules = List.map paths f::pathToModule |> List.dedup;
     /*TODO convert to List.Assoc.t  */
     let npmPkgsModules = List.map npmPkgs f::libToModule;
-    let ocamlfindPkgsModules = List.map ocamlfindPkgs f::libToModule;
 
     /** If the current file's Foo.re, and it depend on Foo, then it's certainly not depending on
         itself, which means that Foo either comes from a third-party module (which we can ignore
         here), or is a nested module from an `open`ed module, which ocamldep would have detected and
         returned in this list. */
-    let segregateDependencies (firstPartyDeps, npmPkgs', ocamlfindPkgs') m => {
+    let segregateDependencies (firstPartyDeps, npmPkgs') m => {
       let moduleExists = List.exists f::(fun m' => m == m');
       if (moduleExists sourceModules) {
-        (firstPartyDeps @ [m], npmPkgs', ocamlfindPkgs')
+        (firstPartyDeps @ [m], npmPkgs')
       } else if (
         moduleExists npmPkgsModules
       ) {
         let pos = List.foldi init::0 f::(fun i acc m' => m' == m ? i : acc) npmPkgsModules;
-        (firstPartyDeps, npmPkgs' @ [List.nth_exn npmPkgs pos], ocamlfindPkgs')
-      } else if (
-        moduleExists ocamlfindPkgsModules
-      ) {
-        let pos = List.foldi init::0 f::(fun i acc m' => m' == m ? i : acc) ocamlfindPkgsModules;
-        (firstPartyDeps, npmPkgs', ocamlfindPkgs' @ [List.nth_exn ocamlfindPkgs pos])
+        (firstPartyDeps, npmPkgs' @ [List.nth_exn npmPkgs pos])
       } else {
-        (firstPartyDeps, npmPkgs', ocamlfindPkgs')
+        (firstPartyDeps, npmPkgs')
       }
     };
     List.filter deps f::(fun m => m != originalModule) |>
-    List.fold init::([], [], []) f::segregateDependencies
+    List.fold init::([], []) f::segregateDependencies
   };
 
   /** Compute ocamldep on source file which gives all the top level modules in the file.
@@ -138,16 +127,10 @@ let ocamlDepThirdPartyLib paths::paths libDir::libDir target::target => {
   List.map
     paths
     f::(
-      fun source =>
-        ocamlDepSource
-          sourcePath::source
-          paths::paths
-          npmPkgs::npmPkgs
-          ocamlfindPkgs::ocamlfindPkgs
-          target::target
+      fun source => ocamlDepSource sourcePath::source paths::paths npmPkgs::npmPkgs target::target
     ) |> Dep.all |>
-  mapD (fun ls => List.fold init::([], []) ls f::(fun (n', o') (_, n, o) => (n' @ n, o' @ o))) |>
-  mapD (fun (npmPkgs, ocamlfindPkgs) => (List.dedup npmPkgs, List.dedup ocamlfindPkgs))
+  mapD (fun ls => List.fold init::[] ls f::(fun n' (_, n) => n' @ n)) |>
+  mapD (fun npmPkgs => (List.dedup npmPkgs, ocamlfindPkgs))
 };
 
 let sortedTransitiveThirdPartyLibs paths::paths target::target => {

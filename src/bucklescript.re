@@ -100,7 +100,7 @@ let compileSourcesScheme
       These are just possibles dependencies. We compute them so that we have a way
       segregate the deps that ocamldep oututs  */
   let thirdPartyNpmLibs = NpmDep.getThirdPartyNpmLibs libDir::libRoot;
-  let thirdPartyOcamlfindLibNames = NpmDep.getThirdPartyOcamlfindLibs libDir::libRoot;
+  let ocamlfindPkgs = NpmDep.getThirdPartyOcamlfindLibs libDir::libRoot;
 
   /** Compute Module Alias dependencies for dependencies only */
   let moduleAliasDep = Dep.all_unit (
@@ -141,7 +141,7 @@ let compileSourcesScheme
   };
 
   /** Compile each file with all it's dependecies */
-  let compilePathScheme path::path (firstPartyDeps, npmPkgs, ocamlfindPkgs) => {
+  let compilePathScheme path::path (firstPartyDeps, npmPkgs) => {
     let isInterface' = isInterface path;
     let hasInterface' = hasInterface sourcePaths::sourcePaths path;
 
@@ -246,6 +246,7 @@ let compileSourcesScheme
         Action to copy the file to match require call */
     let copyTarget = rel dir::buildDir (bsNamespacedName libName::libName path::path ^ ".js");
     let copyAction = bashf "cp %s %s" (tsp (namespacedPath ".js")) (tsp copyTarget);
+
     /** We perform the copy only Linux because file are case-insensitive on OSX  */
     let copyRule =
       switch os_name {
@@ -282,11 +283,7 @@ let compileSourcesScheme
   /** Compute build graph (targets, dependencies) for the current path */
   let compilePathScheme' path =>
     OcamlDep.ocamlDepSource
-      sourcePath::path
-      paths::sourcePaths
-      npmPkgs::thirdPartyNpmLibs
-      target::target
-      ocamlfindPkgs::thirdPartyOcamlfindLibNames |>
+      sourcePath::path paths::sourcePaths npmPkgs::thirdPartyNpmLibs target::target |>
     mapD (compilePathScheme path::path);
   Scheme.all (List.map sourcePaths f::(fun path => compilePathScheme' path |> Scheme.dep))
 };
