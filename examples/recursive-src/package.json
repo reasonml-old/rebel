@@ -20,7 +20,7 @@
         "engine": "native",
         "entry": "src/Index.re",
         "unstable_flags": {
-          "link": "-inline 100",
+          "link": "",
           "compile": "-verbose"
         }
       }

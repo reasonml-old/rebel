@@ -22,10 +22,10 @@
   },
   "license": "ISC",
   "scripts": {
-    "rebel:me": "npm run rebel && ./rebel.sh examples/multiple-entrypoint",
-    "rebel:re": "npm run rebel && ./rebel.sh examples/reason-project",
-    "rebel:rs": "npm run rebel && ./rebel.sh examples/recursive-src",
-    "rebel:bs": "npm run rebel && ./rebel.sh examples/bs-project",
+    "rebel:me": "eval $(dependencyEnv) && npm run rebel && ./rebel.sh examples/multiple-entrypoint",
+    "rebel:re": "eval $(dependencyEnv) && npm run rebel && ./rebel.sh examples/reason-project",
+    "rebel:rs": "eval $(dependencyEnv) && npm run rebel && ./rebel.sh examples/recursive-src",
+    "rebel:bs": "eval $(dependencyEnv) && npm run rebel && ./rebel.sh examples/bs-project",
     "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh",
     "editor": "eval $(dependencyEnv) && $EDITOR .",
     "postinstall": "npm run rebel"
