@@ -254,9 +254,9 @@ let compileSourcesScheme
         if isInterface' {
           [".cmi"]
         } else if hasInterface' {
-          [cmox, ".cmt"]
+          [cmox, ".cmt"] @ (target.engine == "native" ? [ ".o" ] : [])
         } else {
-          [cmox, ".cmi", ".cmt"]
+          [cmox, ".cmi", ".cmt"] @ (target.engine == "native" ? [ ".o" ] : [])
         };
       List.map f::namespacedPath extns
     };
@@ -357,7 +357,9 @@ let finalOutputsScheme
   /** All the cmo/cmss artifacts from the files in the toplevel src dir **/
   /* To compile one cma file, we need to pass the compiled first-party sources in order to ocamlc */
   let cmoxArtifact path => rel dir::buildDir (namespacedName libName::libName path::path ^ cmox);
+  let objectArtifact path => rel dir::buildDir (namespacedName libName::libName path::path ^ ".o");
   let cmoxArtifacts = List.map sortedSourcePaths f::cmoxArtifact;
+  let objectArtifacts = List.map sortedSourcePaths f::objectArtifact;
   let cmoxsString = List.map cmoxArtifacts f::tsp |> String.concat sep::" ";
 
   /**  */
@@ -409,7 +411,7 @@ let finalOutputsScheme
         cmoxsString;
 
     /** TODO: I don't think cmis and cmts are being read here, so we don't need to include them. */
-    let deps = cmoxArtifacts @ transitiveCmaxs |> List.map f::Dep.path;
+    let deps = (target.engine == "native" ? objectArtifacts : []) @ cmoxArtifacts @ transitiveCmaxs |> List.map f::Dep.path;
     let nativeRule = [Rule.simple targets::[binaryOutput] deps::deps action::action];
 
     /** generate app.js from app.byte */
