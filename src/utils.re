@@ -33,6 +33,15 @@ let nonBlank s =>
 let chopSuffixExn str => String.slice str 0 (String.rindex_exn str '.');
 
 
+/** OS helpers */
+let os_name = {
+  let ic = Unix.open_process_in "uname";
+  let uname = input_line ic;
+  In_channel.close ic;
+  uname
+};
+
+
 /** jenga helpers */
 let bash command => Action.process dir::Path.the_root prog::"bash" args::["-c", command] ();
 
@@ -154,26 +163,30 @@ let pathToModule path => Mod (fileNameNoExtNoDir path |> String.capitalize);
 let namespacedName libName::libName path::path =>
   tsm (libToModule libName) ^ "__" ^ tsm (pathToModule path);
 
+let bsKebabToCamel =
+  String.foldi
+    init::""
+    f::(
+      fun _ accum char =>
+        if (accum == "") {
+          Char.to_string char |> String.lowercase
+        } else if (
+          accum.[String.length accum - 1] == '-'
+        ) {
+          String.slice accum 0 (-1) ^ (Char.to_string char |> String.capitalize)
+        } else {
+          accum ^ Char.to_string char
+        }
+    );
+
+let bsLibToModule (Lib name) => Mod (String.capitalize name |> bsKebabToCamel);
+
 /* FIXME Remove after bloomberg/bucklescript#757 is fixed */
-let bsNamespacedName libName::libName path::path => {
-  let bsKebabToCamel =
-    String.foldi
-      init::""
-      f::(
-        fun _ accum char =>
-          if (accum == "") {
-            Char.to_string char |> String.lowercase
-          } else if (
-            accum.[String.length accum - 1] == '-'
-          ) {
-            String.slice accum 0 (-1) ^ (Char.to_string char |> String.capitalize)
-          } else {
-            accum ^ Char.to_string char
-          }
-      );
-  let bsLibToModule (Lib name) => Mod (String.capitalize name |> bsKebabToCamel);
-  tsm (bsLibToModule libName) ^ "__" ^ tsm (pathToModule path)
-};
+let bsNamespacedName libName::libName path::path =>
+  /** On OSX files are not case-insensitive so this unnecessary  */
+  os_name == "Darwin" ?
+    namespacedName libName::libName path::path :
+    tsm (bsLibToModule libName) ^ "__" ^ tsm (pathToModule path);
 
 /* Generic sorting algorithm on directed acyclic graph. Example: [(a, [b, c, d]), (b, [c]), (d, [c])] will be
    sorted into [c, d, b, a] or [c, b, d, a], aka the ones being depended on will always come before the
