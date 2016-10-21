@@ -1,0 +1,32 @@
+language: node_js
+
+node_js:
+  - "7"
+
+os:
+  - linux
+  - osx
+
+# install:
+  # - echo "Hello"
+
+after_success:
+  - bash -e travis/after-success.sh
+
+# before_deploy: bash -e travis/before-deploy.sh
+#
+# deploy:
+#   provider: releases
+#   file_glob: true
+#   file: test-*.zip
+#   skip_cleanup: true
+#   api_key:
+#     secure: "HL0Z7JB++6nM4AQlRBm3jFTw69IddGqga31XirfOPe2jecCiE8cVKb05OLjIrv0VyKXh/UQmnhZQ/uipCIcjpGlXYFV8WMUkoCHiYOPnLP6hawj0F+H965VVukuQ6xPA8vdoK+9UDJW8tvSdIe3Ejb78JQxfPUE8+6GqqsWpwaHKxf4Lz/sLGcjVtzSJt7k4qFFs3OJrGA+SLcnsKTrE8/9IUgve1T+MY35R3M7sCKKjVUWGn3BOxwVDxZrrbPd5jnIE2uHAXimu6ssTFGDjMSvBpWgJi5LpbVPnV+GvXLXteqviqAIOCM7R2N2E2GlUKSYq4J2ntx3CTIwRwkH85dz+8TaD+mDal+QA+dKEf6rpgYB/u/sFmUjvqgU3pBk7QxjDm6+/zO1t9oblEUCWWAaD/0bCn85frKTSlap6j2nPJTuBKXog4QIH4MOgvAFBbPm7kFn7Z6qlAzUFZKT4cDg5fKUhNcYY9jq924OY7RSXzEAKaIWYubGpmHj0TmASK+ishZh/SGfhvXdnEzQm9UWdVP9Fj3NmUFOZryf9nTxn7fbizLkSEsrdwMbZ6CFmk+s5B66jvXKamh2RCtPAsOiN/1J6Wxzq3uAVDRX8l50vWtzYNfnoGXLRLKRxCda3Fkyxt5ZidDFWiQ7GzXIETbL12XnU98gMAMvg0tpYIbg="
+#   on:
+#     tags: true
+#     repo: vramana/rebel
+
+env:
+  global:
+    - GH_REF: github.com/vramana/rebel-bin.git
+    - secure: "I9womRSz9V+wOjVl3rjELqAv0Lx46+pd481zBeHxDaJsd9nZW6kx0LjyGfjOEtld8/Fl6hQBtKGJkklUGT1kfvljmLcY8t/YZIDkrhjK2FDGaUncTv5eqGNc7i7CNe8FOriKv4lp1UWNlEdhOUBgm/bK6dcRgeFgJM+JElw/EqHeQAU+KYzirbE99/upHTQ4KAJ/IAHs0tOd+3EPboWN5GJ26cTMYcGcTGZS0XQOrLmNco50bIEOp535UTS8e3O//60kOblRmhwvcMutihjHeCvF90zGneSF2Hckx+LhxVhAj+Hv3DSj9QTTIGUEM8MaiOq0h/5LkIxrpXOtkQSeHcaTeRSfVjCSO5dztlQgYsmCbwjfHkaCCENWnRKMuxWHJuk44YGngJzOif+M6jOrlulcdGc9HoGXIV9XErRcG9zbUxmZxCBAS0+42/R8ZxJg7psYxWsw81bHr20lypi9qAZYxi6o+zb38s8LWrwJG0o0Bxmh34gdK+oGYmtVRoTFGIIrHRpnzjfAZ6iUhKVrwoPo3SjLrjt627VAZnP2ITbym2F7CkpSlfY75KVta1Gqx4CmXh4M+ti1OU2WvjUbJFsAEQiRZA+RV+TGP9/r8BnLwmNg2HBU3KbBbi30WCKygtOUFeJkpdea3z/X/wHpgbOOc7BZXUJoB0c7gXanVNQ="
