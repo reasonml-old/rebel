@@ -21,7 +21,11 @@
       {
         "target": "default",
         "engine": "byte",
-        "entry": "src/Index.re"
+        "entry": "src/Index.re",
+        "unstable_flags": {
+          "link": "-thread",
+          "compile": "-thread"
+        }
       }
     ]
   }

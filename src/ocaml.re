@@ -155,13 +155,7 @@ let compileSourcesScheme
       | _ => "-package " ^ (ocamlfindPkgs |> List.map f::tsl |> String.concat sep::",")
       };
 
-    /** Hard Coded Rules for special packages */
-    let extraFlags =
-      if (List.mem ocamlfindPkgs (Lib "core")) {
-        "-thread -package threads " ^ target.flags.compile
-      } else {
-        target.flags.compile
-      };
+    let extraFlags = target.flags.compile;
 
     /** Debug Info */
     /* print_endline ("Path: " ^ tsp path);
@@ -371,14 +365,7 @@ let finalOutputsScheme
       ocamlfindPkgs != [] ?
         "-linkpkg -package " ^ (List.map ocamlfindPkgs f::tsl |> String.concat sep::",") : "";
 
-    /** Hard Coded Rules for special packages */
-    /* TODO add ocamlcFlags */
-    let extraFlags =
-      if (List.mem ocamlfindPkgs (Lib "core")) {
-        "-thread -package threads " ^ target.flags.link
-      } else {
-        target.flags.link
-      };
+    let extraFlags = target.flags.link;
 
     /** For ease of coding, we'll blindly include js_of_ocaml in the -I search path here, in case
         the module invokes some jsoo's Js module-related stuff. */
