@@ -18,15 +18,17 @@ open Utils;
 let ocamlDep source::source target::target => {
   let flag = isInterface source ? "-intf" : "-impl";
   let ppx = target.engine == "bucklescript" ? "-ppx bsppx.exe" : "";
+  let extraFlags = target.flags.dep;
   /* betterError doesn't support bucklescript yet */
   let berror = target.engine == "bucklescript" ? "" : "| berror";
 
   /** seems like refmt intelligently detects source code type (re/ml) */
   let getDepAction () =>
     bashf
-      "ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s 2>&1 %s; (exit ${PIPESTATUS[0]})"
+      "ocamlfind ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s %s 2>&1 %s; (exit ${PIPESTATUS[0]})"
       ppx
       flag
+      extraFlags
       (tsp source)
       berror;
   let action = Dep.action_stdout (Dep.path source |> mapD getDepAction);
