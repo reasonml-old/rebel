@@ -155,10 +155,8 @@ let compileSourcesScheme
 
     /** Flag for including ocamlfind packages */
     let ocamlfindPackagesStr =
-      switch ocamlfindPkgs {
-      | [] => ""
-      | libs => "-bs-package-include " ^ (libs |> List.map f::tsl |> String.concat sep::",")
-      };
+      List.map ocamlfindPkgs f::(fun l => "-bs-package-include " ^ tsl l) |>
+      String.concat sep::" ";
 
     /** Debug Info */
     /* print_endline ("Path: " ^ tsp path);
