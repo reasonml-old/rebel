@@ -25,7 +25,8 @@ let ocamlDep source::source target::target => {
   /** seems like refmt intelligently detects source code type (re/ml) */
   let getDepAction () =>
     bashf
-      "ocamlfind ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s %s 2>&1 %s; (exit ${PIPESTATUS[0]})"
+      ignore_stderr::true
+      "ocamlfind ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s %s %s; (exit ${PIPESTATUS[0]})"
       ppx
       flag
       extraFlags
