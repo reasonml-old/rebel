@@ -19,6 +19,7 @@ let ocamlDep source::source target::target => {
   let flag = isInterface source ? "-intf" : "-impl";
   let ppx = target.engine == "bucklescript" ? "-ppx bsppx.exe" : "";
   let extraFlags = target.flags.dep;
+  let envvars = target.flags.envvars;
   /* betterError doesn't support bucklescript yet */
   let berror = target.engine == "bucklescript" ? "" : "| berror";
 
@@ -26,10 +27,11 @@ let ocamlDep source::source target::target => {
   let getDepAction () =>
     bashf
       ignore_stderr::true
-      "ocamlfind ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s %s %s; (exit ${PIPESTATUS[0]})"
+      "%s ocamlfind ocamldep -pp refmt %s %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s %s; (exit ${PIPESTATUS[0]})"
+      envvars
       ppx
-      flag
       extraFlags
+      flag
       (tsp source)
       berror;
   let action = Dep.action_stdout (Dep.path source |> mapD getDepAction);
