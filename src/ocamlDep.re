@@ -21,12 +21,11 @@ let ocamlDep source::source target::target => {
   let extraFlags = target.flags.dep;
   let envvars = target.flags.envvars;
   /* betterError doesn't support bucklescript yet */
-  let berror = target.engine == "bucklescript" ? "" : "| berror";
+  let berror = target.engine == "bucklescript" ? "" : "2>&1| berror";
 
   /** seems like refmt intelligently detects source code type (re/ml) */
   let getDepAction () =>
     bashf
-      ignore_stderr::true
       "%s ocamlfind ocamldep -pp refmt %s %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s %s; (exit ${PIPESTATUS[0]})"
       envvars
       ppx

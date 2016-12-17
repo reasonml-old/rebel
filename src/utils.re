@@ -43,9 +43,9 @@ let os_name = {
 
 
 /** jenga helpers */
-let bash ignore_stderr::ignore_stderr command => Action.process dir::Path.the_root prog::"bash" args::["-c", command] ignore_stderr::ignore_stderr ();
+let bash command => Action.process dir::Path.the_root prog::"bash" args::["-c", command] ();
 
-let bashf ignore_stderr::ignore_stderr=false fmt => ksprintf (bash ignore_stderr::ignore_stderr) fmt;
+let bashf fmt => ksprintf bash fmt;
 
 let relD dir::dir str => Dep.path (Path.relative dir::dir str);
 
