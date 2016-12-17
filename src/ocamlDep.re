@@ -20,12 +20,11 @@ let ocamlDep source::source target::target => {
   let ppx = target.engine == "bucklescript" ? "-ppx bsppx.exe" : "";
   let extraFlags = target.flags.dep;
   /* betterError doesn't support bucklescript yet */
-  let berror = target.engine == "bucklescript" ? "" : "| berror";
+  let berror = target.engine == "bucklescript" ? "" : "2>&1 | berror";
 
   /** seems like refmt intelligently detects source code type (re/ml) */
   let getDepAction () =>
     bashf
-      ignore_stderr::true
       "ocamlfind ocamldep -pp refmt %s -ml-synonym .re -mli-synonym .rei -modules -one-line %s %s %s %s; (exit ${PIPESTATUS[0]})"
       ppx
       flag
