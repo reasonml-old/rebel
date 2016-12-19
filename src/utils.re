@@ -215,7 +215,7 @@ let topologicalSort graph => {
 };
 
 /* package.json helpers */
-type flags = {dep: string, compile: string, link: string, jsoo: string};
+type flags = {dep: string, compile: string, link: string, jsoo: string, envvars: string};
 
 type target = {
   target: string,
@@ -259,6 +259,11 @@ let parseTarget t => {
     | Some (`String f) => f
     | _ => ""
     };
+  let envvars =
+    switch (flags |> Util.to_option (fun a => a |> Util.member "envvars")) {
+    | Some (`String f) => f
+    | _ => ""
+    };
   let (compiler, cmox, cmax) =
     switch engine {
     | "native" => ("ocamlopt", ".cmx", ".cmxa")
@@ -267,7 +272,7 @@ let parseTarget t => {
     | "byte" => ("ocamlc", ".cmo", ".cma")
     | _ => ("", "", "")
     };
-  {target, engine, entry, compiler, cmox, cmax, flags: {dep, compile, link, jsoo}}
+  {target, engine, entry, compiler, cmox, cmax, flags: {dep, compile, link, jsoo, envvars}}
 };
 
 let defaultTarget = {
@@ -277,7 +282,7 @@ let defaultTarget = {
   compiler: "ocamlopt",
   cmox: ".cmx",
   cmax: ".cmxa",
-  flags: {dep: "", compile: "", link: "", jsoo: ""}
+  flags: {dep: "", compile: "", link: "", jsoo: "", envvars: ""}
 };
 
 let rebelConfig = {
