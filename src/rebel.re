@@ -446,7 +446,7 @@ let find_ancestor_directory_containing one_of::one_of => {
   };
   let exists_in dir::dir => {
     let exists path =>
-      switch (Core.Std.Sys.file_exists (dir ^/ Rel.to_string path)) {
+      switch (Core.Std.Sys.file_exists (dir ^\/ Rel.to_string path)) {
       | `No
       | `Unknown => false
       | `Yes => true
