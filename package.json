@@ -2,22 +2,27 @@
   "name": "rebel",
   "description": "Build system for reason that conforms to the magic-build spec. Implemented with Jenga.",
   "dependencies": {
-    "dependency-env": "https://github.com/npm-ml/dependency-env.git",
-    "js_of_ocaml-bin": "https://github.com/reasonml/js_of_ocaml-bin.git",
-    "@opam-alpha/jenga": "*",
     "@opam-alpha/ocamlfind": "*",
+    "@opam-alpha/jenga": "*",
     "@opam-alpha/yojson": "*",
+    "dependency-env": "git+https://github.com/npm-ml/dependency-env.git",
     "nopam": "https://github.com/yunxing/nopam.git",
     "ocamlBetterErrors": "0.0.10",
     "reason": "https://github.com/facebook/reason.git"
   },
-  "devDependencies": {},
+  "devDependencies": {
+  },
   "exportedEnvVars": {
     "PATH": {
       "global": true,
       "globalCollisionBehavior": "joinPath",
       "resolveAsRelativePath": true,
       "val": "./_build/src/"
+    },
+    "OCAMLPARAM": {
+      "global": true,
+      "globalCollisionBehavior": "clobber",
+      "val": "_,g=0"
     }
   },
   "license": "ISC",
@@ -28,7 +33,8 @@
     "rebel:bs": "eval $(dependencyEnv) && npm run rebel && ./rebel.sh examples/bs-project",
     "rebel": "eval $(dependencyEnv) && nopam && ./compile-rebel.sh",
     "editor": "eval $(dependencyEnv) && $EDITOR .",
-    "postinstall": "npm run rebel"
+    "postinstall": "npm run rebel",
+    "test": "echo \"No tests\""
   },
   "version": "0.0.23"
 }

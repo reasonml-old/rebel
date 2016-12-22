@@ -9,11 +9,9 @@ echo $selfSortedFiles
 for source in $selfSortedFiles
 do
   destination=$(echo $source | sed "s/src/_build\/src/" | sed "s/\.re$//")
-  ocamlfind ocamlc -custom -g -bin-annot -pp refmt -w "-40-30" -thread -package ppx_let -package core -package jenga -package yojson -o $destination -I _build/src -c -impl $source
+  ocamlfind ocamlc -custom -pp refmt -w "-40-30" -thread -package ppx_let -package core -package jenga -package yojson -o $destination -I _build/src -c -impl $source
 done
 
 
 selfSortedArtifacts=$(echo $selfSortedFiles | sed "s/src/_build\/src/g" | sed "s/\.re/\.cmo/g")
-# should give: _build/self/myDep.cmo _build/self/myDep2.cmo _build/self/test.cmo
-# ocamlfind ocamlc -o _build/src/rebel -thread -package threads -package ppx_let -package core -package jenga -package yojson -I _build/src $selfSortedArtifactsO
 ocamlfind ocamlc -custom -o _build/src/rebel -linkpkg -thread -package ppx_let -package core -package jenga -package yojson -I _build/src $selfSortedArtifacts
