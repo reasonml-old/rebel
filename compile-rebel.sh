@@ -2,14 +2,14 @@ rm -rf _build/src
 
 mkdir -p _build/src
 
-selfSortedFiles=$(ocamldep -pp refmt -sort -ml-synonym .re src/*.re)
+selfSortedFiles=$(ocamldep -pp "refmt --print binary" -sort -ml-synonym .re src/*.re)
 
 echo $selfSortedFiles
 
 for source in $selfSortedFiles
 do
   destination=$(echo $source | sed "s/src/_build\/src/" | sed "s/\.re$//")
-  ocamlfind ocamlc -custom -g -bin-annot -pp refmt -w "-40-30" -thread -package ppx_let -package core -package jenga -package yojson -o $destination -I _build/src -c -impl $source
+  ocamlfind ocamlc -custom -g -bin-annot -pp "refmt --print binary" -w "-40-30" -thread -package ppx_let -package core -package jenga -package yojson -o $destination -I _build/src -c -impl $source
 done
 
 
