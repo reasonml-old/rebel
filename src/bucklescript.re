@@ -175,18 +175,19 @@ let compileSourcesScheme
       bashf
         (
           if isInterface' {
-            "%s bsc.exe -g %s %s -pp 'refmt " ^ refmt_options ^ "' -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
+            "%s bsc.exe -g %s %s -pp 'refmt %s' -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf %s 2>&1; (exit ${PIPESTATUS[0]})"
           } else if (
             hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
           ) {
-            "%s bsc.exe -g %s %s -pp 'refmt " ^ refmt_options ^ "' -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+            "%s bsc.exe -g %s %s -pp 'refmt %s' -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
           } else {
-            "%s bsc.exe -g %s %s -pp 'refmt " ^ refmt_options ^ "' -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
+            "%s bsc.exe -g %s %s -pp 'refmt %s' -bin-annot -bs-package-name self -bs-package-output commonjs:%s %s %s -o %s -c -impl %s 2>&1; (exit ${PIPESTATUS[0]})"
           }
         )
         target.flags.envvars
         target.flags.compile
         ocamlfindPackagesStr
+        refmt_options
         (tsp buildDir)
         ("-open " ^ tsm (libToModule libName))
         (includeDir ^ " -I " ^ tsp buildDir)
