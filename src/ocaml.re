@@ -180,13 +180,13 @@ let compileSourcesScheme
       bashf
         (
           if isInterface' {
-            "%s ocamlfind %s -pp 'refmt --print binary' -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+            "%s ocamlfind %s -pp 'refmt " ^ refmt_options ^ "' -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
           } else if (
             hasInterface' && String.is_suffix (Path.basename path) suffix::".re"
           ) {
-            "%s ocamlfind %s -pp 'refmt --print binary' -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+            "%s ocamlfind %s -pp 'refmt " ^ refmt_options ^ "' -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -intf-suffix .rei -impl %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
           } else {
-            "%s ocamlfind %s -pp 'refmt --print binary' -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -impl %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
+            "%s ocamlfind %s -pp 'refmt " ^ refmt_options ^ "' -bin-annot -g -w -30 -w -40 %s -I %s %s %s %s -o %s -c -impl %s 2>&1| berror; (exit ${PIPESTATUS[0]})"
           }
         )
         envvars

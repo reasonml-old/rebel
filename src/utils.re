@@ -314,3 +314,5 @@ let readFile path::path =>
 let print_path path => print_endline @@ tsp path;
 
 let print_paths paths => List.iter paths f::print_path;
+
+let refmt_options = "--print binary";
